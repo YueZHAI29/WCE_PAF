@@ -2,7 +2,7 @@
 # Data generation mechanism according to Young et al.2010 and Xiao et al. 2014
 # effect assumption and weight assumption made on marginal effect
 # with binary time-varying confounder affected by previous exposure
-# with missing confounder 
+# with optional missing confounder 
 # Output: dat.complet, dat.obs, dat.locf
 # No other time-fixed confounder was included 
 
