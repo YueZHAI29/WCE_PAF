@@ -1,0 +1,706 @@
+# 5. Function to get the summary tables and plots of different model outputs and metrics
+# for scenarios with list_model_output_complet and list_model_output_locf
+
+# @import function 
+# @import function 
+
+library(tidyverse)
+
+library(MASS)
+library(stats)
+library(stringr)
+library(matrixStats)
+library(splines)
+library(gridExtra)
+library(forcats)
+
+get_summary_tables_and_plots <- function(list_model_output = list_model_output, n = NA, weight_hypo = NULL,
+                                         true_cutoff = NA, tag = NULL,
+                                         HRA = NULL, 
+                                         n.visit = 100, lambda0 = 0.0005,
+                                         models_to_compare = c("cox_ipw_null", 
+                                                               # "cox_unadj_current" , "cox_unadj_cum_half" , "cox_unadj_wce_1knots" ,
+                                                               "cox_ipw_current", "cox_ipw_cum_half", "cox_ipw_cum_whole", 
+                                                               "cox_ipw_wce_1knots_half", "cox_ipw_wce_2knots_half", "cox_ipw_wce_3knots_half",
+                                                               "cox_ipw_wce_1knots_half_right", "cox_ipw_wce_2knots_half_right", "cox_ipw_wce_3knots_half_right", 
+                                                               "cox_ipw_wce_1knots_half_left", "cox_ipw_wce_2knots_half_left", "cox_ipw_wce_3knots_half_left",
+                                                               "cox_ipw_wce_1knots_whole_right", "cox_ipw_wce_2knots_whole_right", "cox_ipw_wce_3knots_whole_right",
+                                                               "cox_ipw_wce_1knots_whole","cox_ipw_wce_2knots_whole", "cox_ipw_wce_3knots_whole","cox_ipw_wce_1knots_whole_left",
+                                                               "cox_ipw_wce_2knots_whole_left", "cox_ipw_wce_3knots_whole_left",
+                                                               "BIC_selected_model", "AIC_selected_model"),    # for boxplot
+                                         directory = "./results/"
+) {
+  # calculate the true counterfactual risk
+  .get_true_proba_by_integration <- function(weight_hypo = NULL, true_cutoff = NULL,
+                                             scena_A = NULL, n.visit = 100, HRA = NULL, lambda0 = NULL) {
+    x <- 0:true_cutoff
+    if (weight_hypo == "decreasing") {
+      y <- exp(-0.1 * x)
+      weights <- y / sum(y)
+      # weight_func <- function(x) exp(-0.1 * x) / 10.44427
+    } else if (weight_hypo == "middle_peak") {
+      mean <- 0.2
+      sd <- 0.06
+      x_for_density <- seq(mean - 4 * sd, mean + 4 * sd, length.out = true_cutoff + 1)
+      y <- dnorm(x_for_density, mean = mean, sd = sd)
+      weights <- y / sum(y)
+    } else if (weight_hypo == "constant") {
+      y <- rep(1 / length(x), length(x))
+      weights <- y
+    } else if (weight_hypo == "only_current") {
+      y <- c(1, rep(0, (length(x) - 1)))
+      weights <- y
+    }
+    A <- matrix(scena_A, nrow = 1, ncol = n.visit)
+    id <- 1
+    Amat <- as.data.frame(cbind(id, A))
+    Amat <- Amat %>% tidyr::pivot_longer(!id, names_to = "visit", values_to = "A")
+    Amat$visit <- 1:n.visit
+    for (i in 1:true_cutoff) {
+      Amat <- Amat %>%
+        group_by(id) %>%
+        mutate("Alag{i}" := dplyr::lag(A, i))
+      Amat[is.na(Amat[, paste0("Alag", i)]), paste0("Alag", i)] <- 0
+    }
+    ## weighted exposure at each time
+    wceA <- as.matrix(Amat[, 3:ncol(Amat)]) %*% as.vector(weights)
+    ## weighted cumulative exposure = cumsum of the above at each time
+    wceA <- cbind(as.data.frame(Amat[, 1:2]), wceA)
+    colnames(wceA)[3] <- "wce"
+    
+    lambda_t <- lambda0 * exp(wceA$wce * log(HRA))
+    cumhz <- sum(lambda_t)
+    Pr_Y_scena_A <- 1 - exp(-cumhz)
+    return(Pr_Y_scena_A)
+  }
+  P0_true <- .get_true_proba_by_integration(scena_A = 0, weight_hypo = weight_hypo, true_cutoff = true_cutoff,
+                                            n.visit = n.visit, HRA = HRA, lambda0 = lambda0)
+  P1_true <- .get_true_proba_by_integration(scena_A = 1, weight_hypo = weight_hypo, true_cutoff = true_cutoff,
+                                            n.visit = n.visit, HRA = HRA, lambda0 = lambda0)
+  
+   mat_observed_proba <- data.frame(weight_hypo = rep(c("decreasing", "middle_peak", "constant", "only_current"), 3),
+                                   lambda = 0.0005,
+                                   P_observed = c(0.088625, 0.08166, 0.078415, 0.108851,
+                                                  0.064401, 0.061463, 0.060955, 0.06869,
+                                                  0.057077, 0.055206, 0.05586, 0.058516 ),
+                                   HR = c(rep(4,4), rep(2,4) , rep(1.5,4) )   )
+  
+  true_P_observed <- mat_observed_proba[which(mat_observed_proba$weight_hypo == weight_hypo &
+                                              mat_observed_proba$lambda == lambda0 &
+                                              mat_observed_proba$HR == HRA), "P_observed"]
+  
+  true_PAF <- (true_P_observed - P0_true) / true_P_observed
+    
+  ############################################################################
+  # For each element in the list (complet or locf), extract table and plots
+  # for now there is only one element in the list (locf not implemented)
+  
+ element_i = 1 
+    list_model_output_i <- list_model_output[[element_i]]
+    tag_element_i <- names(list_model_output)[[element_i]] # tag to indicate "locf" or "complet"
+   # tag_element_i <- strsplit(tag_element_i, split='_', fixed=TRUE)[[1]][[3]]
+    tag_element_i <- weight_hypo
+    
+    # names of the models
+    model_names <- names(list_model_output[[1]][[1]])
+    wce_model_names <- grep("wce", names(list_model_output_i[[1]]), value = TRUE)
+    ipw_model_names <- grep("ipw", names(list_model_output_i[[1]]), value = TRUE)
+    n_sim <- length(list_model_output[[1]])
+    
+    BIC_mat <- AIC_mat <- P0_mat <- P1_mat <- matrix(nrow = length(list_model_output_i), ncol = length(model_names))
+    PAF_est_mat <- PAF_true_mat <- coverage_mat <- coverage_P0 <- PAF_lower_mat <- PAF_upper_mat <- matrix(nrow = length(list_model_output_i), ncol = length(model_names))
+    colnames(BIC_mat) <- colnames(AIC_mat) <- colnames(P0_mat) <- colnames(P1_mat) <- colnames(PAF_est_mat) <- 
+      colnames(PAF_true_mat) <- colnames(coverage_mat)<- colnames(PAF_lower_mat)<- colnames(PAF_upper_mat) <- colnames(coverage_P0) <- model_names
+    for (sim_index in 1:length(list_model_output_i)) {
+      for (model_index in seq_along(model_names)) {
+        model_name <- model_names[model_index]
+        BIC_mat[sim_index, model_index] <- list_model_output_i[[sim_index]][[model_name]][["BIC"]]
+        AIC_mat[sim_index, model_index] <- list_model_output_i[[sim_index]][[model_name]][["AIC"]]
+        tmp <- list_model_output_i[[sim_index]][[model_name]][["Pr_Y_A0"]]
+        P0_predicted <- if ("Pr_A0_ipw" %in% names(tmp)) {
+          as.numeric(tmp["Pr_A0_ipw"])
+        } else {
+          list_model_output_i[[sim_index]][[model_name]][["Pr_Y_A0"]]
+        }
+        P0_mat[sim_index, model_index] <- P0_predicted
+        P1_mat[sim_index, model_index] <- list_model_output_i[[sim_index]][[model_name]][["Pr_Y_A1"]]
+        P_observed <- 1- list_model_output_i[[sim_index]][["cox_ipw_null"]][["proba_observed"]]
+        PAF_est_mat[sim_index, model_index] <- (P_observed - P0_predicted) / P_observed
+      
+        if ("Pr_A0_ipw" %in% names(tmp)) {
+          P0_upper <- as.numeric(tmp["upper"])
+          P0_lower <- as.numeric(tmp["lower"])
+          PAF_lower <- (P_observed - P0_upper) / P_observed
+          PAF_upper <- (P_observed - P0_lower) / P_observed
+          is_covered <- ifelse((true_PAF >= PAF_lower & true_PAF <= PAF_upper), 1, 0)
+          is_covered_P0 <- ifelse((P0_true >= P0_lower & P0_true <= P0_upper), 1, 0)
+        } else {
+          PAF_upper <- PAF_lower <- NA
+          is_covered <- NA
+          is_covered_P0 <- NA
+        }
+        PAF_true_mat[sim_index, model_index] <- true_PAF
+        coverage_mat[sim_index, model_index] <- is_covered
+        coverage_P0[sim_index, model_index] <- is_covered_P0
+        PAF_lower_mat[sim_index, model_index] <- PAF_lower
+        PAF_upper_mat[sim_index, model_index] <- PAF_upper
+        # old version: use the KM estimator for true PAF
+        # PAF_true_mat[sim_index, model_index] <- (P_observed - P0_true) / P_observed
+      } # loop for model
+    } # loop for each simulation
+  
+    # stock the significant rate for each coefficients in each model
+    significancy_list <- list()
+  for (model_index in seq_along(model_names)) {
+  model_name <- model_names[model_index]
+  # create a matrix to stock p values
+  p_value_mat <- matrix(
+    ncol = nrow(list_model_output_i[[1]][[model_name]][["coefficients"]]), # number of covariables
+    nrow = n_sim
+  )
+  for (sim_index in 1:length(list_model_output_i)) {
+    p_value_mat[sim_index, ] <- t(list_model_output_i[[sim_index]][[model_name]][["coefficients"]][, "Pr(>|z|)"])
+  } # loop for each simulation
+  # Calculate percentage of p-values < 0.05 for each column
+  proportion_below_0.05 <- apply(p_value_mat, 2, function(col) {
+    mean(col < 0.05)
+  })
+  names(proportion_below_0.05) <- rownames(list_model_output_i[[1]][[model_name]][["coefficients"]])
+    significancy_list[[model_name]] <- proportion_below_0.05
+} # loop for model
+    
+    # min bic/aic selected models
+    ipw_bic <- BIC_mat[, colnames(BIC_mat) %in% ipw_model_names]
+    ipw_aic <- AIC_mat[, colnames(AIC_mat) %in% ipw_model_names]
+    min_bic_ipw_model_names <- apply(ipw_bic, 1, function(row) colnames(ipw_bic)[which.min(row)])
+    min_aic_ipw_model_names <- apply(ipw_aic, 1, function(row) colnames(ipw_aic)[which.min(row)])
+    
+    min_bic_model_names <- apply(BIC_mat, 1, function(row) colnames(BIC_mat)[which.min(row)])
+    min_aic_model_names <- apply(AIC_mat, 1, function(row) colnames(AIC_mat)[which.min(row)])
+    
+    P0_bias_mat <- as.data.frame(P0_mat- P0_true)
+    PAF_bias_mat <- as.data.frame(PAF_est_mat- PAF_true_mat)  
+    
+    P0_bic_selected <- vector()
+    P0_aic_selected <- vector()
+    PAF_bic_selected <- vector()
+    PAF_aic_selected <- vector()
+    for (sim_index in 1:n_sim) {
+      model_name_bic <- min_bic_ipw_model_names[sim_index]
+      model_name_aic <- min_aic_ipw_model_names[sim_index]
+      P0_bic_selected[sim_index] <- P0_bias_mat[sim_index, model_name_bic]
+      PAF_bic_selected[sim_index] <- PAF_bias_mat[sim_index, model_name_bic]
+      P0_aic_selected[sim_index] <- P0_bias_mat[sim_index, model_name_aic]
+      PAF_aic_selected[sim_index] <- PAF_bias_mat[sim_index, model_name_aic]
+    }
+    P0_bias_mat$BIC_selected_model <- P0_bic_selected
+    P0_bias_mat$AIC_selected_model <- P0_aic_selected
+    PAF_bias_mat$BIC_selected_model <- PAF_bic_selected
+    PAF_bias_mat$AIC_selected_model <- PAF_aic_selected
+    
+    df_for_P0_plot <- as.data.frame(P0_bias_mat[, models_to_compare]) %>%
+      pivot_longer(cols = everything(), names_to = "model", values_to = "P0_bias")
+    df_for_PAF_plot <- as.data.frame(PAF_bias_mat[, models_to_compare]) %>%
+      pivot_longer(cols = everything(), names_to = "model", values_to = "PAF_bias")
+    
+    #########################################################
+    # Clean model labels
+    
+    models_names_label <- models_to_compare %>%
+      gsub("_", " ", .) %>%                     # replace underscores with spaces
+      gsub("cox ipw ", "", .) %>%
+      gsub("(?<=\\d)(?=[A-Za-z])", " ", ., perl = TRUE)  %>% # add space after a number if followed by a letter
+      gsub("1 knots", "1 knot", .) %>%  # Replace "knots" with "knot" after a number
+      gsub("wce", "WCE", .)  %>%
+      tools::toTitleCase(.)   #capitalize first letters for nicer display
+    
+    df_for_P0_plot$model <- factor(df_for_P0_plot$model,
+                                   levels = models_to_compare,
+                                    labels = models_names_label)
+    df_for_PAF_plot$model <- factor(df_for_PAF_plot$model,
+                                    levels = models_to_compare,
+                                    labels = models_names_label)
+    
+    #construct figure to compare P0 and PAF 
+    .process_ic_selected_model <- function(min_bic_ipw_model_names, min_aic_ipw_model_names,
+                                           tag_selection = NULL) {
+      P0_bic_selected <- vector()
+      P0_aic_selected <- vector()
+      PAF_bic_selected <- vector()
+      PAF_aic_selected <- vector()
+      # Extract values based on selected models
+      for (sim_index in 1:n_sim) {
+        model_name_bic <- min_bic_ipw_model_names[sim_index]
+        model_name_aic <- min_aic_ipw_model_names[sim_index]
+        P0_bic_selected[sim_index] <- P0_bias_mat[sim_index, model_name_bic]
+        PAF_bic_selected[sim_index] <- PAF_bias_mat[sim_index, model_name_bic]
+        P0_aic_selected[sim_index] <- P0_bias_mat[sim_index, model_name_aic]
+        PAF_aic_selected[sim_index] <- PAF_bias_mat[sim_index, model_name_aic]
+      }
+      
+      # Add selected model bias values to bias matrices
+      P0_bias_mat$BIC_selected_model <- P0_bic_selected
+      P0_bias_mat$AIC_selected_model <- P0_aic_selected
+      PAF_bias_mat$BIC_selected_model <- PAF_bic_selected
+      PAF_bias_mat$AIC_selected_model <- PAF_aic_selected
+      
+      # Create long-format data frames for plotting
+      df_for_P0_plot <- as.data.frame(P0_bias_mat[, models_to_compare]) %>%
+        pivot_longer(cols = everything(), names_to = "model", values_to = "P0_bias")
+      df_for_PAF_plot <- as.data.frame(PAF_bias_mat[, models_to_compare]) %>%
+        pivot_longer(cols = everything(), names_to = "model", values_to = "PAF_bias")
+      
+      df_for_P0_plot$model <- factor(df_for_P0_plot$model,
+                                     levels = models_to_compare,
+                                     labels = models_names_label)
+      df_for_PAF_plot$model <- factor(df_for_PAF_plot$model,
+                                      levels = models_to_compare,
+                                      labels = models_names_label)
+      
+      my_colors <- colorRampPalette(RColorBrewer::brewer.pal(12, "Paired"))(length(unique(df_for_P0_plot$model)))
+      plot_P0_bias <- ggplot(df_for_P0_plot, aes(x = model, y = P0_bias, fill = model)) +
+        geom_boxplot(alpha = 0.7) +
+        geom_jitter(width = 0.2, alpha = 0.9, size = 0.1, color = "skyblue4") +
+        labs(title = paste0(tag_element_i, "_Cox WCE MSMs vs. unadjusted","\n",tag_selection), x = "Models", y = "P0 bias") +
+        theme_minimal() +
+        theme(
+          axis.title.x = element_text(size = 14, face = "bold"),
+          axis.title.y = element_text(size = 14, face = "bold"),
+          axis.text.y = element_text(size = 12, face = "bold"),
+          legend.position = "none",
+          axis.text.x = element_text(angle = 45, hjust = 1)
+        ) +
+        stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "red3", fill = "red3") +
+        coord_flip() +
+        geom_hline(yintercept = 0, color = "black", linetype = 1, size = 0.5) +
+        scale_fill_manual(values = my_colors)
+      
+      plot_PAF_bias <- ggplot(df_for_PAF_plot, aes(x = model, y = PAF_bias, fill = model)) +
+        geom_boxplot(alpha = 0.7) +
+        geom_jitter(width = 0.2, alpha = 0.9, size = 0.1,color = "skyblue4") +
+        labs(title = paste0(tag_element_i, "_ Comparison of different Cox WCE MSMs "), x = "Models", y = "PAF bias") +
+        theme_minimal() +
+        theme(
+          axis.title.x = element_text(size = 14, face = "bold"),  # Customize x-axis label
+          axis.title.y = element_text(size = 14, face = "bold"),
+          axis.text.y = element_text(size = 12, face = "bold"),
+          legend.position = "none"
+        ) +
+        stat_summary(fun = mean, geom="point", shape=20, size=3, color="red3", fill="red3") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        coord_flip() +
+        geom_hline(yintercept = 0, color = "black", linetype = 1, size = 0.5) +
+        scale_fill_manual(values = my_colors)
+      
+      # Return everything as a list
+      return(list(df_for_P0_plot = df_for_P0_plot,
+        df_for_PAF_plot = df_for_PAF_plot,
+        plot_P0_bias = plot_P0_bias,
+        plot_PAF_bias = plot_PAF_bias))
+    }
+    plot_P0_bias <- .process_ic_selected_model(min_bic_ipw_model_names, min_aic_ipw_model_names)$plot_P0_bias
+    plot_PAF_bias <- .process_ic_selected_model(min_bic_ipw_model_names, min_aic_ipw_model_names)$plot_PAF_bias
+    plot_P0_bias_unadj <- .process_ic_selected_model(min_bic_model_names, min_aic_model_names,
+                               tag_selection = "Unadjusted models included in the selection")$plot_P0_bias
+    plot_PAF_bias_unadj <- .process_ic_selected_model(min_bic_model_names, min_aic_model_names,
+                               tag_selection = "Unadjusted models included in the selection")$plot_PAF_bias
+    
+    # levels(df_for_PAF_plot$model) = c("AIC selected model", "BIC selected model", "unweighted cumulated half", "current" , "WCE 1 knot half no constraint", 
+    # "WCE 1 knot half right constraint", "WCE 2 knots half no constraint", "WCE 2 knots half right constraint",
+    # "WCE 3 knots half no constraint", "WCE 3 knots half right constraint")
+    
+    # plot_P0_bias <- ggplot(df_for_P0_plot, aes(x = model, y = P0_bias, fill = model)) +
+    #   geom_boxplot(alpha = 0.7) +
+    #   geom_jitter(width = 0.2, alpha = 0.9, size = 0.1, color = "skyblue4") +
+    #   labs(title = paste0(tag_element_i, "_ Comparison of different Cox WCE MSMs "), x = "Models", y = "P0 bias") +
+    #   theme_minimal() +
+    #   theme(
+    #     axis.title.x = element_text(size = 14, face = "bold"), # Customize x-axis label
+    #     axis.title.y = element_text(size = 14, face = "bold"),
+    #     axis.text.y = element_text(size = 12, face = "bold"),
+    #     legend.position = "none") +
+    #   stat_summary(fun = mean, geom = "point", shape = 20, size = 3, color = "red3", fill = "red3") +
+    #   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    #   coord_flip() +
+    #   geom_hline(yintercept = 0, color = "black", linetype = 1, size = 0.5) +
+    #   scale_fill_brewer(palette = "Paired")
+    
+    min_bic_ipw_model_table <- table(min_bic_ipw_model_names)
+    min_bic_ipw_model_table <- min_bic_ipw_model_table[order(min_bic_ipw_model_table, decreasing = TRUE)]
+    min_aic_ipw_model_table <- table(min_aic_ipw_model_names)
+    min_aic_ipw_model_table <- min_aic_ipw_model_table[order(min_aic_ipw_model_table, decreasing = TRUE)]
+    
+    min_bic_model_table <- table(min_bic_model_names)
+    min_bic_model_table <- min_bic_model_table[order(min_bic_model_table, decreasing = TRUE)]
+    min_aic_model_table <- table(min_aic_model_names)
+    min_aic_model_table <- min_aic_model_table[order(min_aic_model_table, decreasing = TRUE)]
+    
+    wce_bic <- BIC_mat[, colnames(BIC_mat) %in% wce_model_names]
+    wce_aic <- AIC_mat[, colnames(AIC_mat) %in% wce_model_names]
+    
+    # Find the row minimums for the subset
+    min_bic_wce_model <- apply(wce_bic, 1, function(row) colnames(wce_bic)[which.min(row)])
+    min_bic_wce_model_table <- table(min_bic_wce_model)
+    min_bic_wce_model_table <- min_bic_wce_model_table[order(min_bic_wce_model_table, decreasing = TRUE)]
+    
+    min_aic_wce_model <- apply(wce_aic, 1, function(row) colnames(wce_aic)[which.min(row)])
+    min_aic_wce_model_table <- table(min_aic_wce_model)
+    min_aic_wce_model_table <- min_aic_wce_model_table[order(min_aic_wce_model_table, decreasing = TRUE)]
+    
+    # summary matrix of the estimands
+    criteria <- c("mean", "sd", "bias", "percent bias", "rmse")
+    estimand_criteria_names <- c(paste("Pr_Y_A0", criteria), paste("PAF", criteria), paste("Pr_Y_A1", criteria))
+    estimands_mat <- matrix(nrow = length(estimand_criteria_names), ncol = length(model_names))
+    colnames(estimands_mat) <- model_names
+    rownames(estimands_mat) <- estimand_criteria_names
+    
+    estimands_mat["Pr_Y_A0 mean", ] <- colMeans(P0_mat)
+    estimands_mat["Pr_Y_A0 sd", ] <- matrixStats::colSds(P0_mat)
+    estimands_mat["Pr_Y_A0 bias", ] <- colMeans(P0_mat) - P0_true
+    estimands_mat["Pr_Y_A0 percent bias", ] <- (colMeans(P0_mat) - P0_true) / P0_true
+    P0_true_mat <- matrix(P0_true, nrow = length(list_model_output_i), ncol = length(model_names))
+    estimands_mat["Pr_Y_A0 rmse", ] <- sqrt(colMeans((P0_mat - P0_true_mat)^2))
+    
+    estimands_mat["Pr_Y_A1 mean", ] <- colMeans(P1_mat)
+    estimands_mat["Pr_Y_A1 sd", ] <- matrixStats::colSds(P1_mat)
+    estimands_mat["Pr_Y_A1 bias", ] <- colMeans(P1_mat) - P1_true
+    estimands_mat["Pr_Y_A1 percent bias", ] <- (colMeans(P1_mat) - P1_true) / P1_true
+    P1_true_mat <- matrix(P1_true, nrow = length(list_model_output_i), ncol = length(model_names))
+    estimands_mat["Pr_Y_A1 rmse", ] <- sqrt(colMeans((P1_mat - P1_true_mat)^2))
+    
+    # true PAF for "bias" calculation taken as the MEAN of true_PAFs in each simulation
+    # true PAF for rmse calculation taken as the individual true PAFs in each simulation
+    estimands_mat["PAF mean", ] <- colMeans(PAF_est_mat)
+    estimands_mat["PAF sd", ] <- matrixStats::colSds(PAF_est_mat)
+    estimands_mat["PAF bias", ] <- colMeans(PAF_est_mat) - colMeans(PAF_true_mat)
+    estimands_mat["PAF percent bias", ] <- (colMeans(PAF_est_mat) - colMeans(PAF_true_mat)) / colMeans(PAF_true_mat)[1]
+    estimands_mat["PAF rmse", ] <- sqrt(colMeans((PAF_est_mat - PAF_true_mat)^2))
+    
+    min_estimands_bias_model <- apply(estimands_mat[c(
+      "Pr_Y_A0 bias", "Pr_Y_A0 rmse", "PAF bias", "PAF rmse",
+      "Pr_Y_A1 bias", "Pr_Y_A1 rmse"
+    ), ], 1, function(row) colnames(estimands_mat)[which.min(abs(row))])
+    min_estimands_values <- apply(estimands_mat[c("Pr_Y_A0 bias", "Pr_Y_A0 rmse", "PAF bias", "PAF rmse",
+                                                  "Pr_Y_A1 bias", "Pr_Y_A1 rmse"), ], 1, function(row) min(abs(row)))
+    min_estimands_bias_model <- data.frame(min_estimands_bias_model, min_estimands_values)
+    
+    coverage_summary <- cbind( coverage = colSums(coverage_mat), coverage_P0 = colSums(coverage_P0),
+                               PAF_lower = colMeans(PAF_lower_mat), PAF_upper = colMeans(PAF_upper_mat) )
+    
+    #
+    summary_tables <- list(
+      estimands_mat = t(estimands_mat),
+      min_estimands_bias_model = min_estimands_bias_model,
+      min_bic_ipw_model_table = min_bic_ipw_model_table,
+      min_aic_ipw_model_table = min_aic_ipw_model_table,
+      min_bic_model_table = min_bic_model_table,
+      min_aic_model_table = min_aic_model_table,
+      min_bic_wce_model_table = min_bic_wce_model_table,
+      min_aic_wce_model_table = min_aic_wce_model_table,
+      coverage_summary = coverage_summary,
+      significancy_list = significancy_list,
+      BIC_mat = BIC_mat,
+      AIC_mat = AIC_mat,
+      min_bic_ipw_model_names = min_bic_ipw_model_names,
+      min_aic_ipw_model_names = min_aic_ipw_model_names,
+      min_bic_wce_model = min_bic_wce_model,
+      min_aic_wce_model = min_aic_wce_model,
+      P0_mat = P0_mat,
+      P1_mat = P1_mat,
+      PAF_est_mat = PAF_est_mat,
+      PAF_true_mat = PAF_true_mat
+    )
+    ##############################
+    ###    For plots:    #########
+    ##############################
+    #wce_model_names <- names(list_model_output_i[[1]])[-(1:7)]
+    wce_model_names <- grep("wce", names(list_model_output_i[[1]]), value = TRUE)
+    
+    # List of plot for individual models
+    plot_list <- list()
+    for (model_index in seq_along(wce_model_names)) {
+      model_name <- wce_model_names[model_index]
+      # nknots = stringr::str_extract(model_name, "\\d+") %>% as.numeric()
+      model_cutoff <- ifelse(grepl("whole", model_name), n.visit, n.visit / 2)
+      x <- 0:true_cutoff # length(x) is the length of true_cutoff + 1
+      if (weight_hypo == "decreasing") {
+        y <- exp(-0.1 * x)
+        weights <- y / sum(y)
+      }
+      if (weight_hypo == "middle_peak") {
+        mean <- 0.2
+        sd <- 0.06
+        x_for_density <- seq(mean - 4 * sd, mean + 4 * sd, length.out = true_cutoff + 1)
+        y <- dnorm(x_for_density, mean = mean, sd = sd)
+        weights <- y / sum(y)
+      }
+      if (weight_hypo == "constant") {
+        y <- rep(1 / length(x), length(x))
+        weights <- y
+      }
+      if (weight_hypo == "only_current") {
+        y <- c(1, rep(0, (length(x) - 1)))
+        weights <- y
+      }
+      true_weight <- weights * log(HRA)
+      
+      # construct the matrix of estimated weights
+      est_weight_mat <- matrix(nrow = length(list_model_output_i), ncol = model_cutoff + 1)
+      for (sim_index in 1:length(list_model_output_i)) {
+        est_weight_mat[sim_index, ] <- list_model_output_i[[sim_index]][[model_name]][["coef_weight_predict"]]
+      }
+      if (model_cutoff > true_cutoff) { # for when model iuse whole fup and true curoff is only half fup
+        true_weight <- c(true_weight, rep(0, model_cutoff - true_cutoff))
+      }
+      time_since_expo <- seq(0, model_cutoff, 1)
+      n_sim <- length(list_model_output_i)
+      mean_weight <- colMeans(est_weight_mat)
+      
+      mat_for_plot <- data.frame(cbind(time_since_expo, t(est_weight_mat), mean_weight, true_weight))
+      colnames(mat_for_plot)[2:(n_sim + 1)] <- c(2:(n_sim + 1))
+      mat_for_plot <- mat_for_plot %>% pivot_longer(!time_since_expo, names_to = "simulation", values_to = "weight")
+      mat_for_plot$simulation <- factor(mat_for_plot$simulation)
+      mat_for_plot$group <- "simulations"
+      mat_for_plot[mat_for_plot$simulation == "mean_weight", "group"] <- "mean"
+      mat_for_plot[mat_for_plot$simulation == "true_weight", "group"] <- "true"
+      mat_for_plot$group <- factor(mat_for_plot$group, levels <- c("simulations", "mean", "true"))
+      
+      plot_each_sim <- mat_for_plot %>% ggplot(aes(x = time_since_expo, y = weight, group = simulation, color = group)) +
+        geom_line(aes(size = simulation)) +
+        ggtitle(paste0(tag_element_i, "_ Estimated effects: ", n_sim, " simulations, mean value (blue) & true value (red), \n model: ", model_name)) +
+        ylab("Estimated coefficient, = log(HR)") +
+        xlab("Time since exposure") +
+        theme(axis.text = element_text(size = 15, face = "bold")) +
+        scale_color_manual(values = c(simulations = "gray", true = "red4", mean = "blue4")) +
+        scale_size_manual(values = c(rep(0.5, n_sim), 1.3, 1.3)) +
+        guides(size = "none") +
+        theme(legend.position = "none")
+      
+      # Generate a dynamic name for the plot
+      plot_name <- paste0("plot_", model_index)
+      plot_list[[plot_name]] <- plot_each_sim
+      assign(paste0("plot_", model_index), plot_each_sim)
+    } # loop for model
+    
+    ### plot for bic selected models
+    est_weight_bic_selected_wce <- est_weight_aic_selected_wce <- 
+      est_weight_bic_selected <- est_weight_aic_selected <- matrix(nrow = length(list_model_output_i), ncol = n.visit + 1)
+    
+    .get_model_est_weight <- function(model_name, list_model_output_i, sim_index, n.visit = 100){
+      model_cutoff <- ifelse(grepl("whole", model_name), n.visit, n.visit / 2)
+      est_weight_model_i <- vector(length = n.visit +1)
+      
+      if (grepl("cum", model_name)){
+        model_coef <- list_model_output_i[[sim_index]][[model_name]][["coefficients"]][,"coef"]
+        standardized_weight <- rep( 1/(model_cutoff +1), model_cutoff +1)
+        est_weight_model_i <- model_coef * standardized_weight
+      }
+      else if (grepl("null", model_name)){
+        est_weight_model_i <- rep(0, model_cutoff +1)
+      }
+      else if (grepl("current", model_name)){
+        model_coef <- list_model_output_i[[sim_index]][[model_name]][["coefficients"]][,"coef"]
+        est_weight_model_i <- c(model_coef, rep(0, n.visit/2) )
+      }
+      else {
+        est_weight_model_i <- list_model_output_i[[sim_index]][[model_name]]$coef_weight_predict
+      }
+    }
+    
+    for (sim_index in 1:length(list_model_output_i)) {
+      model_name_bic <- min_bic_ipw_model_names[sim_index]
+      model_name_aic <- min_aic_ipw_model_names[sim_index]
+      model_name_bic_wce <- min_bic_wce_model[sim_index]
+      model_name_aic_wce <- min_aic_wce_model[sim_index]
+      
+      # bic selected wce models
+      model_cutoff_bic_wce <- ifelse(grepl("whole", model_name_bic_wce), n.visit, n.visit / 2)
+      est_weight_bic_selected_wce[sim_index, 1:(model_cutoff_bic_wce + 1)] <- list_model_output_i[[sim_index]][[model_name_bic_wce]]$coef_weight_predict
+      
+      # aic selected wce models
+      model_cutoff_aic_wce <- ifelse(grepl("whole", model_name_aic_wce), n.visit, n.visit / 2)
+      est_weight_aic_selected_wce[sim_index, 1:(model_cutoff_aic_wce + 1)] <- list_model_output_i[[sim_index]][[model_name_aic_wce]]$coef_weight_predict
+      
+      # aic selected models
+      est_weight_model_aic <- .get_model_est_weight(model_name = model_name_aic, list_model_output_i, sim_index = sim_index, n.visit = 100)
+      model_cutoff_aic <- ifelse(grepl("whole", model_name_aic), n.visit, n.visit / 2)
+      est_weight_aic_selected[sim_index, 1:(model_cutoff_aic + 1)] <- est_weight_model_aic
+      # bic selected  models
+      est_weight_model_bic <- .get_model_est_weight(model_name = model_name_bic, list_model_output_i, sim_index = sim_index, n.visit = 100)
+      model_cutoff_bic <- ifelse(grepl("whole", model_name_bic), n.visit, n.visit / 2)
+      est_weight_bic_selected[sim_index,  1:(model_cutoff_bic + 1)] <- est_weight_model_bic
+    }
+    
+    est_weight_aic_selected[is.na(est_weight_aic_selected)] <- 0
+    est_weight_bic_selected[is.na(est_weight_bic_selected)] <- 0
+    est_weight_bic_selected_wce[is.na(est_weight_bic_selected_wce)] <- 0
+    est_weight_aic_selected_wce[is.na(est_weight_aic_selected_wce)] <- 0
+    
+    .plot_IC_selected_models <- function(est_weight_bic_selected_wce = est_weight_bic_selected_wce,
+                                         tag = "BIC selected WCE MSMs ", tag2 = NULL){
+      est_weight_bic_selected_wce <- as.data.frame(est_weight_bic_selected_wce)
+      true_weight <- weights * log(HRA)
+      true_weight <- c(true_weight, rep(0, n.visit - true_cutoff))
+      time_since_expo <- seq(0, n.visit, 1)
+      mean_weight <- vector()
+      for (icol in 1:ncol(est_weight_bic_selected_wce)){
+        i_weights <- est_weight_bic_selected_wce[, icol]
+        mean_weight[icol] <- mean(i_weights[!is.na(i_weights)])
+      }
+      mat_for_plot <- data.frame(cbind(time_since_expo, t(est_weight_bic_selected_wce), mean_weight, true_weight))
+      colnames(mat_for_plot)[2:(n_sim + 1)] <- c(2:(n_sim + 1))
+      mat_for_plot <- mat_for_plot %>% pivot_longer(!time_since_expo, names_to = "simulation", values_to = "weight")
+      mat_for_plot$simulation <- factor(mat_for_plot$simulation)
+      mat_for_plot$group <- "simulations"
+      mat_for_plot[mat_for_plot$simulation == "mean_weight", "group"] <- "mean"
+      mat_for_plot[mat_for_plot$simulation == "true_weight", "group"] <- "true"
+      mat_for_plot$group <- factor(mat_for_plot$group, levels <- c("simulations", "mean", "true"))
+      
+      plot_selected_models <- mat_for_plot %>% ggplot(aes(x = time_since_expo, y = weight, group = simulation, color = group)) +
+        geom_line(aes(size = simulation)) +
+        ggtitle(paste0(tag_element_i, "_ ", tag, n_sim, " simulations, \n", tag2 , " \n mean value (blue) & true value (red) ")) +
+        ylab("Estimated coefficient, = log(HR)") +
+        xlab("Time since exposure") +
+        theme(axis.text = element_text(size = 15, face = "bold")) +
+        scale_color_manual(values = c(simulations = "gray", true = "red4", mean = "blue4")) +
+        scale_size_manual(values = c(rep(0.5, n_sim), 1.3, 1.3)) +
+        guides(size = "none") +
+        ylim(-0.3, 0.3) +
+        theme(legend.position = "none")
+      return(plot_selected_models)
+    }
+    
+    .get_count_null <- function(IC_of_interest = "BIC"){
+      if(IC_of_interest == "BIC"){
+        names_temp <- min_bic_ipw_model_names
+      } else if (IC_of_interest == "AIC") {
+        names_temp <- min_aic_ipw_model_names
+      }
+      count_null <- sum(grepl("null", names_temp))
+      count_current <- sum(grepl("current", names_temp))
+      count_cum <- sum(grepl("cum", names_temp))
+      tag_p1 <- if (count_null > 0) paste0("count null: ", count_null, "/ ") else NULL
+      tag_p2 <- if (count_current > 0) paste0("count current: ", count_current, "/ ") else NULL
+      tag_p3 <- if (count_cum > 0) paste0("count unweighted sum: ", count_cum, "/ ") else NULL
+      tag2 <- paste0(tag_p1, tag_p2, tag_p3)
+      
+      #if (is.null(tag2) || tag2 == "") tag2 <- NULL
+      return(tag2)
+    }
+    
+    tag2_aic <- .get_count_null(IC_of_interest ="AIC")
+    tag2_bic <- .get_count_null(IC_of_interest ="BIC")
+    
+    plot_AIC_selected <- .plot_IC_selected_models(est_weight_aic_selected,
+                                                  tag = "AIC selected MSMs ", tag2 = tag2_aic)
+    plot_BIC_selected <- .plot_IC_selected_models(est_weight_bic_selected,
+                                                  tag = "BIC selected MSMs ", tag2 = tag2_bic)
+    plot_AIC_selected_wce <- .plot_IC_selected_models(est_weight_aic_selected_wce,
+                                                      tag = "AIC selected WCE MSMs ")
+    plot_BIC_selected_wce <- .plot_IC_selected_models(est_weight_bic_selected_wce,
+                                                      tag = "BIC selected WCE MSMs ")
+    
+   ###    Save the tables     ###
+    directory <- directory
+    file_name <- paste0(tag_element_i, "_", tag, "_Tables_HR_", HRA, "_scena_", weight_hypo, "_cutoff_", true_cutoff,
+                        "_nsim_", n_sim, "_n_", n)
+    output_file <- paste0(directory, file_name, ".txt")
+    # Open a connection to the file
+    file_conn <- file(output_file, open = "w")
+    
+    write_nested_tables <- function(x, file_conn, parent_name = NULL) {
+      for (name in names(x)) {
+        full_name <- if (!is.null(parent_name)) paste(parent_name, name, sep = " -> ") else name
+        
+        if (is.list(x[[name]]) && !is.data.frame(x[[name]])) {
+          # If the element is a nested list (but not a data.frame), recurse
+          cat("### Nested list: ", full_name, " ###\n", file = file_conn, append = TRUE)
+          write_nested_tables(x[[name]], file_conn, full_name)
+        } else {
+          # Otherwise, write the table/data.frame
+          cat("### ", full_name, " ###\n", file = file_conn, append = TRUE)
+          write.table(x[[name]], file = file_conn, sep = "\t", 
+                      row.names = TRUE, col.names = TRUE, append = TRUE, quote = FALSE)
+          cat("\n\n", file = file_conn, append = TRUE)
+        }
+      }
+    }
+    # Clear the file before writing
+    cat("", file = file_conn)
+    # Call the function on your list
+    write_nested_tables(summary_tables, file_conn)
+    
+
+    #### for when there are only tables, no list : ###
+    # for (table_name in names(summary_tables)) {
+    #   # Write a header for the table
+    #   cat("### ", table_name, " ###\n", file = file_conn)
+    #   # Write the table content
+    #   write.table(summary_tables[[table_name]], file = file_conn, sep = "\t", 
+    #               row.names = TRUE, col.names = TRUE, append = TRUE, quote = FALSE)
+    #   # Add spacing between tables
+    #   cat("\n\n", file = file_conn)
+    # }
+    
+    # Close the file connection
+    close(file_conn)
+    # Check the saved file
+    cat("Tables saved to:", output_file)
+    
+    #### SAVE the plots
+    file_name <- paste0(tag_element_i, "_", tag, "_Plots_HR_", HRA, "_scena_", weight_hypo, "_cutoff_", true_cutoff,
+                        "_nsim_", n_sim, "_n_", n)
+    pdf(file = paste0(directory, file_name, "_plots.pdf"), height = 6, width = 8)
+    
+    # Combine all plots into one list
+    all_plots <- list(
+      plot_P0_bias,
+      plot_PAF_bias,
+      plot_P0_bias_unadj,
+      plot_PAF_bias_unadj,
+      plot_AIC_selected,
+      plot_BIC_selected,
+      plot_AIC_selected_wce,
+      plot_BIC_selected_wce
+    )
+    # Add plots from plot_list
+    all_plots <- c(all_plots, plot_list)
+    # Plot 4 per page
+    par(mfrow = c(2, 2))  # 2 rows, 2 columns
+    for (i in seq_along(all_plots)) {
+      print(all_plots[[i]])
+            # After every 4 plots, reset layout (to trigger new page)
+      if (i %% 4 == 0 && i != length(all_plots)) {
+        par(mfrow = c(2, 2))  # Start a new page
+      }
+    }
+    dev.off()
+    ##### to arrange four plots per page: ####
+    # for (i in seq(1, length(all_plots), by = 4)) {
+    #   # Select up to 4 plots
+    #   plots_to_print <- all_plots[i:min(i+3, length(all_plots))]
+    #   # Arrange them 2x2 on one page
+    #   grid.arrange(grobs = plots_to_print, nrow = 2, ncol = 2)
+    # }
+  return(list(summary_tables = summary_tables,
+              all_plots = all_plots,
+              plot_P0_bias = plot_P0_bias, 
+              plot_PAF_bias = plot_PAF_bias,
+              plot_AIC_selected = plot_AIC_selected,
+              plot_BIC_selected = plot_BIC_selected))
+}
+
+
+
+#######################################
+list_scenario1 <- readRDS("~/output/weight1_half_hr4_n_1000_nsim_100_T0L1.rds")
+summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 1000, weight_hypo = "decreasing",
+                    true_cutoff = 50, tag = "T0L1", HRA = 4,
+                    models_to_compare = c( "cox_ipw_null", "cox_unadj_current" , "cox_unadj_cum_half" , "cox_unadj_wce_1knots" ,
+                                           "cox_ipw_current", "cox_ipw_cum_half", "cox_ipw_cum_whole", 
+                                           "cox_ipw_wce_1knots_half", "cox_ipw_wce_2knots_half", "cox_ipw_wce_3knots_half",
+                                           "cox_ipw_wce_1knots_half_right", "cox_ipw_wce_2knots_half_right", "cox_ipw_wce_3knots_half_right", 
+                                           "cox_ipw_wce_1knots_half_left", "cox_ipw_wce_2knots_half_left", "cox_ipw_wce_3knots_half_left",
+                                           "cox_ipw_wce_1knots_whole_right", "cox_ipw_wce_2knots_whole_right", "cox_ipw_wce_3knots_whole_right",
+                                           "BIC_selected_model", "AIC_selected_model"),
+                    directory = "~/results/" )
