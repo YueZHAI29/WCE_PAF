@@ -1,0 +1,194 @@
+# 4. Calculate true PAF by simulate a very large cohort
+
+library(tidyverse)
+
+library(MASS)
+library(stats)
+library(stringr)
+library(matrixStats)
+library(splines2)
+library(zoo)
+library(dplyr)
+
+
+
+get_true_proba <- function(weight_hypo = "decreasing", true_cutoff = 50, n= 10000, n.visit = 100, 
+                         LtoA = 1, AtoL = 0.5, logitpL = 0, LtoL = 1, lambda0 = 0.0005, HRA = 4,  
+                         T0toL = 1, logitpA = -3, AtoA = 4, n.obs = 5, censor_max = NULL, seed = NA){
+  if (is.na(seed)) {
+    set.seed(sample(10000, 1))
+  } else if (is.numeric(seed)) {
+    set.seed(seed)
+  } else {
+    stop("Invalid seed: must be numeric or NA.")
+  }
+  expit=function(x){exp(x)/(1+exp(x))}
+  
+  # Measurement schedule
+  J <-	n.visit  # number of measurement in the "complete" dataset
+  Step <- 1
+  tj <- rep(seq(0,J-1,Step),n) # vector of visit times for all n individuals (0,...,9)
+  Jt <- length(seq(0,J-1,Step)) # number of planned visit time (=10)
+  
+  # generate survival time T0 (counterfactual for A=0), for each individual
+  # from a exponential distribution
+  V = runif(n,0,1) 
+  T0 <- -log(V)/lambda0
+  T0_threshold <- quantile(T0, 0.3)
+  
+  L = matrix(nrow=n,ncol=n.visit)
+  A = matrix(nrow=n,ncol=n.visit)
+  
+  # A binary
+  L[,1]=rbinom(n,1,expit(logitpL 
+                         # + T0toL * I(T0 < T0_threshold)
+  ) )
+  A[,1]=rbinom(n,1,expit(logitpA + LtoA*L[,1]) )# A0|L0: logit(P) = -1 + ..*L0
+  for(k in 2:n.visit){
+    L[,k] = rbinom(n,1, expit(logitpL + LtoL*L[, k-1] + AtoL * A[, k-1] + 
+                                T0toL * I(T0 < T0_threshold)) )
+    A[,k]= rbinom(n,1,expit(logitpA + LtoA*L[,k] + AtoA * A[,k-1] ) )# A1|A0,L0,L1,T>=k
+  }
+  #colMeans(L);  colMeans(A); matrixStats::colSds(L)
+  #summary(rowSums(A))
+  #hist(rowSums(A))
+  
+  #####################################################################
+  ###       Calculate WCE  using a certain weight assumption        ###
+  
+  .generate_true_weight <- function(true_cutoff, weight_hypo) {
+    x <- 0:true_cutoff
+    
+    if (weight_hypo == "decreasing") {
+      # exponentially decreasing
+      y <- exp(-0.1 * x)
+      weights <- y / sum(y)
+    } else if (weight_hypo == "middle_peak") {
+      # as described in Sylvestre et al. 2009 paper (supplementary)
+      mean <- 25
+      sd <- 0.1
+      x_for_density <- seq(mean - 4 * sd, mean + 4 * sd, length.out = true_cutoff + 1)
+      y <- dnorm(x_for_density, mean = mean, sd = sd)
+      weights <- y / sum(y)
+    } else if (weight_hypo == "constant") {
+      y <- rep(1 / length(x), length(x))
+      weights <- y
+    } else if (weight_hypo == "only_current") {
+      y <- c(1, rep(0, length(x) - 1))
+      weights <- y
+    } else {
+      stop("Invalid weight_hypo value")
+    }
+    return(weights)
+  }
+  weights <- .generate_true_weight(true_cutoff, weight_hypo )
+  # plot(weights ~ x)
+  
+  # generate matrix of exposure and lagged values (long format)
+  id =c(1:n)
+  Amat = as.data.frame(cbind(id, A))
+  Amat = Amat %>% tidyr::pivot_longer(!id, names_to = "visit", values_to = "A")
+  Amat$visit <- rep(1:n.visit, n)
+  for (i in 1:true_cutoff) {
+    Amat = Amat %>%
+      group_by(id) %>%
+      dplyr::mutate("Alag{i}":= dplyr::lag(A, i))
+    Amat[is.na(Amat[,paste0("Alag",i)] ) , paste0("Alag",i)] <- 0
+  }
+  ## weighted exposure at each time
+  #  = weights for each lagged time exposure *exposure value
+  wceA = as.matrix(Amat[, 3:ncol(Amat)]) %*% as.vector(weights)
+  ## weighted cumulative exposure = cumsum of the above at each time 
+  wceA = cbind(as.data.frame(Amat[, 1:2]), wceA)
+  colnames(wceA)[3] <- "wce"
+  # pivot back to wide format for survival time generation
+  wceA = wceA %>% tidyr::pivot_wider(values_from = "wce", names_from = "visit")
+  wceA <- as.matrix(wceA[,-1])
+  rm(Amat)
+  
+  # Generation of survival time
+  T.obs <- rep(NA, n)
+  # function to calculate integral of  exp(log(HRA)*wceA[,t])dt (Xiao et al.2014)
+  v=1    # visit No.1
+  exp_sum <- exp(log(HRA) * wceA[, 1])
+  exp_sum_lag1 <- 0
+  new.t = (T0 - exp_sum_lag1 ) * exp(-log(HRA) * wceA[, 1])
+  T.obs = ifelse(T0 <= exp_sum , v-1+new.t, T.obs) 
+  
+  for(v in 2:n.visit){
+    # check if T0 < integral of  exp(log(HRA)*wceA[,t])dt
+    #integral:
+    exp_sum <- 0
+    for (icol in 1:v) {
+      exp_sum <- exp_sum + exp(log(HRA) * wceA[, icol])
+    }
+    exp_sum_lag1 <- exp_sum - exp(log(HRA) * wceA[, v])
+    new.t = (T0 - exp_sum_lag1 ) * exp(-log(HRA) * wceA[, v])
+    T.obs = ifelse(is.na(T.obs) & T0 <= exp_sum , v-1+new.t, T.obs)
+  } 
+  D.obs=ifelse(is.na(T.obs),0,1)
+  T.obs=ifelse(is.na(T.obs),n.visit,T.obs)
+  
+  Proba_event <- sum(D.obs)/n
+  return(Proba_event)
+  
+}
+  
+
+# P_observed_1 <- get_true_proba(n = 1000000, weight_hypo = "decreasing", true_cutoff = 50, HRA = 4) 
+# 0.088625
+
+# P_observed_2 <- get_true_proba(n = 1000000, weight_hypo = "middle_peak", true_cutoff = 50, HRA = 4)
+# cat("scenario 2 observed probability: ", P_observed_2)
+# 0.08166
+#
+# P_observed_3 <- get_true_proba(n = 1000000, weight_hypo = "constant", true_cutoff = 50, HRA = 4) 
+# cat("scenario 3 observed probability: ", P_observed_3)
+# 0.078415
+
+# P_observed_4 <- get_true_proba(n = 10000, weight_hypo = "only_current", true_cutoff = 50, HRA = 4)
+# cat("scenario 4 observed probability: ", P_observed_4)
+# 0.108851
+
+#####     HR=2     #########################
+# P_observed_1 <-  get_true_proba(n = 1000000, weight_hypo = "decreasing", true_cutoff = 50, HRA = 2)
+# 0.064401
+
+#####     HR=1.5     #########################
+# P_observed_1 <-  get_true_proba(n = 1000000, weight_hypo = "decreasing", true_cutoff = 50, HRA = 1.5)
+# 0.057077
+
+####################
+# P_observed_2 <-  get_true_proba(n = 1000000, weight_hypo = "middle_peak", true_cutoff = 50, HRA = 2)
+# 0.061463
+
+####################
+# P_observed_2 <-  get_true_proba(n = 1000000, weight_hypo = "middle_peak", true_cutoff = 50, HRA = 1.5)
+
+# 0.055206
+
+#######################
+# P_observed_3 <- get_true_proba(n = 1000000, weight_hypo = "constant", true_cutoff = 50, HRA = 2)
+# cat("scenario 3 observed probability: ", P_observed_3)
+# 0.060955
+
+#HR = 1.5
+# P1_true_mat_scena3 <- vector()
+# for (isim in 1:50){
+#   P1_true_mat_scena3[isim] <- get_true_proba(n = 1000000, weight_hypo = "constant", true_cutoff = 50, HRA = 1.5)
+#   print(isim)
+# }
+# P_observed_3 <- mean(P1_true_mat_scena3)
+# 
+# 
+# 0.05576
+
+################################
+# P_observed_4 <- get_true_proba(n = 1000000, weight_hypo = "only_current", true_cutoff = 50, HRA = 2)
+# cat("scenario 4 observed probability: ", P_observed_4)
+# 0.06869
+
+#HR = 1.5
+#P_observed_4 <- get_true_proba(n = 1000000, weight_hypo = "only_current", true_cutoff = 50, HRA = 1.5)
+# cat("scenario 4 observed probability: ", P_observed_4)
+# 0.058516
