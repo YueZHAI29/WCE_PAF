@@ -1,5 +1,5 @@
 # Function to fit all models and return model objects on an input dataset
-# input a simulated by sim_MSM_WCE_cond() function
+# input: the dataset(list) simulated by sim_MSM_WCE_cond() function
 
 # @import function sim_MSM_WCE()
 
@@ -429,7 +429,7 @@ fit_models <- function(dat.complet = dat.complet, n=1000, n.visit = 100){
     AIC = AIC(cox_unadj_cum_half)
   )
   ##################
-  ## The same as BIC()
+  ## BIC() gives the same output as volinsky's  adapted BIC
   BIC_volinsky <- function(fit) {
     ll <- fit$loglik[2]
     k  <- length(coef(fit))
@@ -575,3 +575,4 @@ fit_models <- function(dat.complet = dat.complet, n=1000, n.visit = 100){
 }
 
 # fit <- fit_models(dat.complet = dat.complet, n=1000, n.visit = 100)
+
