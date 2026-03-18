@@ -1,0 +1,55 @@
+# master simulation file for slurm
+# for one scenario, 
+# do 100 or 500 simulations and stock the model output as a list
+
+#load necessary functions
+library(tidyverse)
+library(survival)
+
+library(MASS)
+library(stats)
+library(stringr)
+library(matrixStats)
+library(splines)
+
+#load necessary functions
+source("~/simulation code/1_function_to_generate_data.R")
+source("~/simulation code/2_function_to_fit_models.R")
+
+sim_and_stock_model_outputs <- function(n_sim = 100, weight_hypo = "decreasing", true_cutoff = 50, n = 1000,
+                                      n.visit = 100, LtoA = 1, AtoL = 0.5, logitpL = 0, LtoL = 1,
+                                      lambda0 = 0.005, HRA = 4,  T0toL = 1,
+                                      logitpA = -3, AtoA = 4, n.obs = 5, censor_max = NULL) {
+  list_model_output <- list()
+
+  for (i_sim in 1:n_sim) {
+    set.seed(NULL)
+    # simulate a dataset
+    dat.list <- sim_MSM_WCE(weight_hypo = weight_hypo, true_cutoff = true_cutoff, n = n,
+      n.visit = n.visit, LtoA = LtoA, AtoL = AtoL, logitpL = logitpL, LtoL = LtoL,
+      lambda0 = lambda0, HRA = HRA, T0toL = T0toL, logitpA = logitpA, AtoA = AtoA,
+      n.obs = n.obs, censor_max = censor_max)
+    dat.complet <- dat.list$dat.complet
+    # dat.locf <- dat.list$dat.locf
+    rm(dat.list)
+    
+    model_list_complet <- fit_models(dat.complet = dat.complet, n = n, n.visit = n.visit)
+    #model_list_locf <- fit_models(dat.complet = dat.locf, n = n, n.visit = n.visit)
+    
+    # model_names <- names(model_list)
+    list_model_output[[i_sim]] <- model_list_complet
+    # list_model_output_locf[[i_sim]] <- model_list_locf
+    
+    print(i_sim)
+  } # end of ith simulation loop
+  return(list(list_model_output = list_model_output))
+} # end of function
+
+
+##########################################
+###       HRA = 4, n = 1000            ###
+##########################################
+#### weight scenario 1, half, HR = 4
+list_model_output <- sim_and_stock_model_outputs(n_sim = 100, weight_hypo = "decreasing",true_cutoff = 50, HRA = 4, 
+                                                 T0toL = 1, censor_max = 5)
+saveRDS(list_model_output, "~/R/WCE/09_Main_analyses_for_article/output/censor/weight1_half_hr4_n_1000_nsim_10_T0L1.rds", compress = TRUE)
