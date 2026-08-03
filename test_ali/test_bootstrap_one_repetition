@@ -8,6 +8,7 @@
 
 B <- 10        # number of bootstraps
 set.seed(2)
+n_sample <- 10000
 
 
 library(tidyverse)
@@ -20,7 +21,7 @@ library(splines2)
 library(zoo)
 library(dplyr)
 
-sim_MSM_WCE <- function(weight_hypo = "decreasing", true_cutoff = 50, n=1000, n.visit = 100, 
+sim_MSM_WCE <- function(weight_hypo = "decreasing", true_cutoff = 50, n=10000, n.visit = 100, 
                         LtoA = 1, AtoL = 0.5, logitpL = 0, LtoL = 1, lambda0 = 0.0005, HRA = 4,  
                         T0toL = 0.5, logitpA = -3, AtoA = 4, n.obs = 5,censor_max = NULL,
                         seed = NA){
@@ -510,7 +511,7 @@ compute_ipw <- function(data) {
 }
 
 
-fit_models <- function(dat.complet = dat.complet, n=1000, n.visit = 100){
+fit_models <- function(dat.complet = dat.complet, n=10000, n.visit = 100){
   # Calculate weight
   compute_ipw <- function(data) {
     # denominator model: Pr(Ak | Lk, A(k-1))
@@ -988,12 +989,12 @@ cat("Reference true PAF for this scenario ≈", round(true_ref$PAF_true, 4),
 # 3. Point estimate on the original n=1000 sample
 # ============================================================
 set.seed(1)
-d <- sim_MSM_WCE(weight_hypo = "decreasing", n = 1000, HRA = 4,
+d <- sim_MSM_WCE(weight_hypo = "decreasing", n = n_sample, HRA = 4,
                   lambda0 = 0.0005, seed = 1)$dat.complet
 cat("Event rate:", mean(tapply(d$event, d$id, max)), "\n")
 
 t0 <- Sys.time()
-point_res <- fit_and_summarize(d, n = 1000, n.visit = 100)
+point_res <- fit_and_summarize(d, n = n_sample, n.visit = 100)
 point_res$summary_row$boot_id <- 0L
 point_res$summary_row$type    <- "point_estimate"
 point_res$summary_row$time_s  <- round(as.numeric(Sys.time() - t0, units = "secs"), 1)
@@ -1032,8 +1033,8 @@ for (b in 1:B) {
   # interrupted partway (each rep takes several minutes)
   interim <- rbind(point_res$summary_row, do.call(rbind, results_list[1:b]))
   saveRDS(list(all_results = interim, BIC_full_mat_so_far = do.call(rbind, bic_full_list[1:b])),
-          file = "bootstrap_pilot_n1000_B10_results.rds")
-  write.csv(interim, "bootstrap_pilot_n1000_B10_results.csv", row.names = FALSE)
+          file = "bootstrap_pilot_n10000_B10_results.rds")
+  write.csv(interim, "bootstrap_pilot_n10000_B10_results.csv", row.names = FALSE)
 }
 
 # ============================================================
@@ -1071,12 +1072,12 @@ print(table(boot_results$model_BIC))
 # 7. Save everything so you don't have to re-run to inspect later
 # ============================================================
 saveRDS(list(all_results = all_results, BIC_full_mat = BIC_full_mat),
-        file = "bootstrap_pilot_n1000_B10_results.rds")
-write.csv(all_results, "bootstrap_pilot_n1000_B10_results.csv", row.names = FALSE)
+        file = "bootstrap_pilot_n10000_B10_results.rds")
+write.csv(all_results, "bootstrap_pilot_n10000_B10_results.csv", row.names = FALSE)
 
 print(all_results)
 
-hist(boot_results$PAF_BIC, breaks = 6, main = "Bootstrap distribution of PAF (n=1000, B=10)",
+hist(boot_results$PAF_BIC, breaks = 6, main = "Bootstrap distribution of PAF (n=10000, B=10)",
      xlab = "PAF"); abline(v = point_res$summary_row$PAF_BIC, col = "red", lwd = 2)
 
 
