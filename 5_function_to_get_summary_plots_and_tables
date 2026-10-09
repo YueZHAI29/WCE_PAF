@@ -14,6 +14,165 @@ library(splines)
 library(gridExtra)
 library(forcats)
 
+setwd("")
+dir_folder <- "09_Main_analyses_for_article"
+dir_out <- "09_Main_analyses_for_article/results"
+
+# [REV-MCSE] Integrated MCSE functions (no external script 8 required).
+# MCSEs are conditional on the supplied reference truth.
+# Variance/empirical-SE/RMS-SE/RMSE MCSEs use first-order delta methods,
+# with empirical moments (no normality assumption for the PAF estimates).
+
+mcse_metrics <- function(x, truth) {
+  if (length(truth) != 1L || !is.finite(truth))
+    stop('Supply one fixed finite reference truth per setting.')
+  if (length(x) < 3L || any(!is.finite(x)))
+    stop('Need >=3 finite replicate estimates; handle/report failures explicitly.')
+  n <- length(x); e <- x-truth; s <- sd(x); v <- var(x)
+  mse <- mean(e^2); rmse <- sqrt(mse)
+  # Influence contributions for the sample variance (finite-n correction).
+  iv <- n/(n-1) * ((x-mean(x))^2 - mean((x-mean(x))^2))
+  v_mcse <- sd(iv)/sqrt(n)
+  estimates <- c(mean=mean(x), bias=mean(e), relative_bias_pct=if(truth!=0) 100*mean(e)/truth else NA_real_,
+                 variance=v, empirical_SE=s, RMSE=rmse)
+  errors <- c(s/sqrt(n), s/sqrt(n), if(truth!=0) 100*s/(abs(truth)*sqrt(n)) else NA_real_,
+              v_mcse, if(s>0) v_mcse/(2*s) else 0,
+              if(rmse>0) sd(e^2)/(2*rmse*sqrt(n)) else 0)
+  data.frame(metric=names(estimates), estimate=unname(estimates), MCSE=errors, R=n,
+             row.names=NULL)
+}
+
+mcse_proportion <- function(indicator) {
+  if(anyNA(indicator) || !all(indicator %in% c(0,1))) stop('Need complete binary indicators.')
+  p <- mean(indicator); n <- length(indicator)
+  # Boundary plug-in MCSE=0 does not mean zero uncertainty.
+  data.frame(estimate=100*p, MCSE=100*sqrt(p*(1-p)/n), R=n,
+             boundary=p %in% c(0,1))
+}
+
+model_dictionary <- function(n_visit = 100L) {
+  d <- data.frame(model_id = c('cox_ipw_null', 'cox_ipw_current',
+    'cox_ipw_cum_half', 'cox_ipw_cum_whole'),
+    label = c('Null MSM', 'Current exposure',
+      paste0('Unweighted cumulative exposure, ', n_visit/2, ' visits'),
+      paste0('Unweighted cumulative exposure, ', n_visit, ' visits')))
+  for (window in c('half', 'whole')) for (constraint in c('', '_left', '_right')) {
+    visits <- if (window == 'half') n_visit/2 else n_visit
+    term <- if (constraint == '') 'unconstrained' else if (constraint == '_left')
+      'left-constrained' else 'right-constrained'
+    for (k in 1:3) d <- rbind(d, data.frame(
+      model_id = paste0('cox_ipw_wce_', k, 'knots_', window, constraint),
+      label = paste0('WCE, ', visits, ' visits, ', term, ', ', k,
+                     if (k == 1) ' knot' else ' knots')))
+  }
+  d <- rbind(d, data.frame(model_id = c('AIC_selected_model', 'BIC_selected_model'),
+    label = c('AIC-selected model', 'BIC-selected model')))
+  # Single-line model labels
+  d$axis_label <- d$label
+  
+  d$order_top_to_bottom <- seq_len(nrow(d))
+  d
+}
+
+wce_order_ids <- function(ids, n_visit=100) {
+  official <- model_dictionary(n_visit)$model_id
+  c(intersect(official,ids),setdiff(ids,official))
+}
+wce_display_factor <- function(ids, include_ids=NULL, n_visit=100) {
+  if(is.null(include_ids)) include_ids <- unique(as.character(ids))
+  ordered <- rev(wce_order_ids(include_ids,n_visit))
+  dict <- model_dictionary(n_visit)
+  labels <- dict$axis_label[match(ordered,dict$model_id)]
+  labels[is.na(labels)] <- ordered[is.na(labels)]
+  factor(as.character(ids),levels=ordered,labels=labels)
+}
+wce_add_display <- function(d) {
+  d$model_display <- wce_display_factor(d$model_names)
+  d
+}
+wce_rmse_data <- function(summaries) {
+  rows <- lapply(seq_along(summaries),function(i) {
+    z <- summaries[[i]]$summary_tables
+    a <- mcse_main_tables(z,paste0('Scenario',i),NA,NA)$performance
+    a <- a[a$metric=='RMSE',]
+    a$model <- sub('^(AIC|BIC)-selected$','\\1_selected_model',a$model)
+    a <- a[a$model %in% model_dictionary()$model_id,,drop=FALSE]
+    data.frame(model_names=a$model,Scenario=paste0('Scenario',i),RMSE=a$estimate,
+               RMSE_MCSE=a$MCSE,R=a$R)
+  })
+  do.call(rbind,rows)
+}
+wce_frequency_data <- function(summaries) {
+  rows <- lapply(seq_along(summaries),function(i) {
+    a <- mcse_main_tables(summaries[[i]],paste0('Scenario',i),NA,NA)$selection
+    data.frame(model_names=a$model,scenario=paste('Scenario',i),metric=a$criterion,
+               scenario_metric=paste0('Scenario ',i,'_',a$criterion),frequency=a$estimate,
+               MCSE=a$MCSE,R=a$R,count=round(a$estimate*a$R/100))
+  })
+  d <- do.call(rbind,rows)
+  d$metric <- factor(d$metric,levels=c('AIC','BIC'))
+  d
+}
+wce_export_MCSE <- function(summaries,HRA,size,output_dir) {
+  dir.create(output_dir,recursive=TRUE,showWarnings=FALSE)
+  ans <- lapply(seq_along(summaries),function(i)
+    mcse_main_tables(summaries[[i]],paste0('Scenario',i),size,HRA))
+  for(k in c('performance','selection')) {
+    d <- do.call(rbind,lapply(ans,`[[`,k))
+    d$model_id <- sub('^(AIC|BIC)-selected$','\\1_selected_model',d$model)
+    dict <- model_dictionary(); d$model_display <- dict$label[match(d$model_id,dict$model_id)]
+    d <- d[order(d$scenario,match(d$model_id,dict$model_id)),]
+    if(k=='selection') d$count <- round(d$estimate*d$R/100)
+    d$estimate_MCSE <- sprintf('%.5f (%.5f)',d$estimate,d$MCSE)
+    write.csv(d,file.path(output_dir,paste0(k,'_MCSE_HR',HRA,'_n',size,'.csv')),row.names=FALSE)
+  }
+  write.csv(model_dictionary(),file.path(output_dir,'model_display_dictionary.csv'),row.names=FALSE)
+  rr <- wce_rmse_data(summaries)
+  write.csv(rr[rr$model_names=='cox_ipw_null',],
+            file.path(output_dir,paste0('null_RMSE_MCSE_HR',HRA,'_n',size,'.csv')),row.names=FALSE)
+  invisible(ans)
+}
+
+# Refresh existing summary plots without changing their geom/theme definitions.
+wce_refresh_summary <- function(z) {
+  tab <- z$summary_tables; x <- as.matrix(tab$PAF_est_mat)
+  for(ic in c("AIC","BIC")) {
+    ids <- as.character(tab[[paste0("min_",tolower(ic),"_ipw_model_names")]])
+    x <- cbind(x,x[cbind(seq_len(nrow(x)),match(ids,colnames(x)))])
+    colnames(x)[ncol(x)] <- paste0(ic,"_selected_model")
+  }
+  for(what in c("PAF","P0")) {
+    key <- paste0("plot_",what,"_bias")
+    if(is.null(z[[key]])) next
+    if(what=="PAF") errors <- x - tab$PAF_true_mat[1,1] else {
+      errors <- as.matrix(tab$P0_mat)
+      truth <- tab$estimands_mat[1,"Pr_Y_A0 mean"]-tab$estimands_mat[1,"Pr_Y_A0 bias"]
+      errors <- errors-truth
+      for(ic in c("AIC","BIC")) {
+        ids <- as.character(tab[[paste0("min_",tolower(ic),"_ipw_model_names")]])
+        errors <- cbind(errors,errors[cbind(seq_len(nrow(errors)),match(ids,colnames(errors)))])
+        colnames(errors)[ncol(errors)] <- paste0(ic,"_selected_model")
+      }
+    }
+    ids <- intersect(model_dictionary()$model_id,colnames(errors))
+    d <- data.frame(model=rep(ids,each=nrow(errors)),value=as.vector(errors[,ids,drop=FALSE]))
+    names(d)[2] <- paste0(what,"_bias")
+    d$model <- wce_display_factor(d$model,include_ids=ids)
+    z[[key]]$data <- d
+    # [REV-NO-BLUE-DOTS] Also remove jitter layers when reusing an OLD summary plot.
+    # StatSummary red mean points and boxplot outliers are retained.
+    keep_layers <- vapply(z[[key]]$layers,function(layer)
+      !(inherits(layer$geom,"GeomPoint") && inherits(layer$position,"PositionJitter")),logical(1))
+    z[[key]]$layers <- z[[key]]$layers[keep_layers]
+  }
+  if(is.null(z$plots_by_model)) {
+    ids <- grep("wce",colnames(tab$PAF_est_mat),value=TRUE)
+    z$plots_by_model <- setNames(lapply(seq_along(ids),function(i)
+       z$all_plots[[paste0("plot_",i)]]),ids)
+  }
+  z
+}
+
 get_summary_tables_and_plots <- function(list_model_output = list_model_output, n = NA, weight_hypo = NULL,
                                          true_cutoff = NA, tag = NULL,
                                          HRA = NULL, 
@@ -28,7 +187,7 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
                                                                "cox_ipw_wce_1knots_whole","cox_ipw_wce_2knots_whole", "cox_ipw_wce_3knots_whole","cox_ipw_wce_1knots_whole_left",
                                                                "cox_ipw_wce_2knots_whole_left", "cox_ipw_wce_3knots_whole_left",
                                                                "BIC_selected_model", "AIC_selected_model"),    # for boxplot
-                                         directory = "./results/"
+                                         directory = NA
 ) {
   # calculate the true counterfactual risk
   .get_true_proba_by_integration <- function(weight_hypo = NULL, true_cutoff = NULL,
@@ -82,7 +241,7 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
                                    lambda = 0.0005,
                                    P_observed = c(0.088625, 0.08166, 0.078415, 0.108851,
                                                   0.064401, 0.061463, 0.060955, 0.06869,
-                                                  0.057077, 0.055206, 0.05586, 0.058516 ),
+                                                  0.057077, 0.055206, 0.05576, 0.058516 ),
                                    HR = c(rep(4,4), rep(2,4) , rep(1.5,4) )   )
   
   true_P_observed <- mat_observed_proba[which(mat_observed_proba$weight_hypo == weight_hypo &
@@ -206,21 +365,14 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
     #########################################################
     # Clean model labels
     
-    models_names_label <- models_to_compare %>%
-      gsub("_", " ", .) %>%                     # replace underscores with spaces
-      gsub("cox ipw ", "", .) %>%
-      gsub("(?<=\\d)(?=[A-Za-z])", " ", ., perl = TRUE)  %>% # add space after a number if followed by a letter
-      gsub("1 knots", "1 knot", .) %>%  # Replace "knots" with "knot" after a number
-      gsub("wce", "WCE", .)  %>%
-      tools::toTitleCase(.)   #capitalize first letters for nicer display
-    
-    df_for_P0_plot$model <- factor(df_for_P0_plot$model,
-                                   levels = models_to_compare,
-                                    labels = models_names_label)
-    df_for_PAF_plot$model <- factor(df_for_PAF_plot$model,
-                                    levels = models_to_compare,
-                                    labels = models_names_label)
-    
+    # [REV-DISPLAY] Factor order is reversed so coord_flip shows the intended top-to-bottom order.
+    display_ids <- rev(wce_order_ids(models_to_compare,n.visit))
+    dict <- model_dictionary(n.visit)
+    models_names_label <- dict$axis_label[match(display_ids,dict$model_id)]
+    models_names_label[is.na(models_names_label)] <- display_ids[is.na(models_names_label)]
+    df_for_P0_plot$model <- factor(df_for_P0_plot$model,levels=display_ids,labels=models_names_label)
+    df_for_PAF_plot$model <- factor(df_for_PAF_plot$model,levels=display_ids,labels=models_names_label)
+
     #construct figure to compare P0 and PAF 
     .process_ic_selected_model <- function(min_bic_ipw_model_names, min_aic_ipw_model_names,
                                            tag_selection = NULL) {
@@ -251,22 +403,22 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
         pivot_longer(cols = everything(), names_to = "model", values_to = "PAF_bias")
       
       df_for_P0_plot$model <- factor(df_for_P0_plot$model,
-                                     levels = models_to_compare,
+                                     levels = display_ids,
                                      labels = models_names_label)
       df_for_PAF_plot$model <- factor(df_for_PAF_plot$model,
-                                      levels = models_to_compare,
+                                      levels = display_ids,
                                       labels = models_names_label)
       
       my_colors <- colorRampPalette(RColorBrewer::brewer.pal(12, "Paired"))(length(unique(df_for_P0_plot$model)))
       plot_P0_bias <- ggplot(df_for_P0_plot, aes(x = model, y = P0_bias, fill = model)) +
         geom_boxplot(alpha = 0.7) +
-        geom_jitter(width = 0.2, alpha = 0.9, size = 0.1, color = "skyblue4") +
+        # [REV-NO-BLUE-DOTS] Individual blue jitter dots removed; boxplot and red mean retained.
         labs(title = paste0(tag_element_i, "_Cox WCE MSMs vs. unadjusted","\n",tag_selection), x = "Models", y = "P0 bias") +
         theme_minimal() +
         theme(
           axis.title.x = element_text(size = 14, face = "bold"),
           axis.title.y = element_text(size = 14, face = "bold"),
-          axis.text.y = element_text(size = 12, face = "bold"),
+          axis.text.y = element_text( size = 10, face = "plain"),
           legend.position = "none",
           axis.text.x = element_text(angle = 45, hjust = 1)
         ) +
@@ -277,13 +429,13 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
       
       plot_PAF_bias <- ggplot(df_for_PAF_plot, aes(x = model, y = PAF_bias, fill = model)) +
         geom_boxplot(alpha = 0.7) +
-        geom_jitter(width = 0.2, alpha = 0.9, size = 0.1,color = "skyblue4") +
+        # [REV-NO-BLUE-DOTS] Individual blue jitter dots removed; boxplot and red mean retained.
         labs(title = paste0(tag_element_i, "_ Comparison of different Cox WCE MSMs "), x = "Models", y = "PAF bias") +
         theme_minimal() +
         theme(
           axis.title.x = element_text(size = 14, face = "bold"),  # Customize x-axis label
           axis.title.y = element_text(size = 14, face = "bold"),
-          axis.text.y = element_text(size = 12, face = "bold"),
+          axis.text.y = element_text(size = 10,face = "plain"),
           legend.position = "none"
         ) +
         stat_summary(fun = mean, geom="point", shape=20, size=3, color="red3", fill="red3") +
@@ -410,6 +562,30 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
       PAF_est_mat = PAF_est_mat,
       PAF_true_mat = PAF_true_mat
     )
+    # [REV-MCSE] Preserve estimands_mat; add separate tables with estimate/MCSE/R columns.
+    mcse_added <- mcse_main_tables(summary_tables,weight_hypo,n,HRA)
+    summary_tables$PAF_performance_MCSE <- mcse_added$performance
+    summary_tables$model_selection_MCSE <- mcse_added$selection
+    summary_tables$risk_performance_MCSE <- rbind(
+      do.call(rbind,lapply(colnames(P0_mat),function(m)
+        cbind(estimand="Pr_Y_A0",model=m,mcse_metrics(P0_mat[,m],P0_true)))),
+      do.call(rbind,lapply(colnames(P1_mat),function(m)
+        cbind(estimand="Pr_Y_A1",model=m,mcse_metrics(P1_mat[,m],P1_true)))))
+    # CIs missing in an input RDS are reported as unavailable; do not create coverage.
+    summary_tables$coverage_MCSE <- do.call(rbind,lapply(seq_along(model_names),function(j) {
+      do.call(rbind,lapply(c("PAF","Pr_Y_A0"),function(estimand) {
+        v <- if(estimand=="PAF") coverage_mat[,j] else coverage_P0[,j]
+        valid <- !is.na(v); p <- if(any(valid)) mean(v[valid]) else NA_real_
+        data.frame(estimand=estimand,model=model_names[j],R_total=length(v),R_valid=sum(valid),
+          coverage_pct=100*p,MCSE_pct=if(any(valid)) 100*sqrt(p*(1-p)/sum(valid)) else NA_real_)
+      }))
+    }))
+    effect_MCSE_rows <- list()
+    plots_by_model <- list()
+    # [REV-MCSE] Save conventional cumulative coefficients used by original Figure2.
+    cum_effect_coefficients <- setNames(lapply(c("cox_ipw_cum_half","cox_ipw_cum_whole"),function(m)
+      vapply(list_model_output_i,function(z) as.numeric(z[[m]]$coefficients[,"coef"]),numeric(1))),
+      c("cox_ipw_cum_half","cox_ipw_cum_whole"))
     ##############################
     ###    For plots:    #########
     ##############################
@@ -454,6 +630,9 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
       }
       time_since_expo <- seq(0, model_cutoff, 1)
       n_sim <- length(list_model_output_i)
+      # [REV-MCSE] Pointwise effect summaries use the same matrix and truth as the original plot.
+      effect_MCSE_rows[[model_name]] <- cbind(model=model_name,
+        mcse_effect_function(est_weight_mat,true_weight,lags=time_since_expo))
       mean_weight <- colMeans(est_weight_mat)
       
       mat_for_plot <- data.frame(cbind(time_since_expo, t(est_weight_mat), mean_weight, true_weight))
@@ -479,6 +658,8 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
       # Generate a dynamic name for the plot
       plot_name <- paste0("plot_", model_index)
       plot_list[[plot_name]] <- plot_each_sim
+      # [REV-DISPLAY] Keep old plot_N names; add stable model-ID lookup.
+      plots_by_model[[model_name]] <- plot_each_sim
       assign(paste0("plot_", model_index), plot_each_sim)
     } # loop for model
     
@@ -536,6 +717,22 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
     est_weight_bic_selected_wce[is.na(est_weight_bic_selected_wce)] <- 0
     est_weight_aic_selected_wce[is.na(est_weight_aic_selected_wce)] <- 0
     
+    # [REV-MCSE] Additional selected-effect pointwise summaries; original plotting remains unchanged.
+    curve_truth <- c(weights*log(HRA),rep(0,n.visit-true_cutoff))
+    for(ic in c("AIC","BIC")) {
+      mat <- if(ic=="AIC") est_weight_aic_selected else est_weight_bic_selected
+      effect_MCSE_rows[[paste0(ic,"_selected_model")]] <- cbind(model=paste0(ic,"_selected_model"),
+        mcse_effect_function(mat,curve_truth,lags=0:n.visit))
+    }
+    summary_tables$effect_function_MCSE <- do.call(rbind,effect_MCSE_rows)
+    # Separate CSVs supplement the original TXT tables; include setting in file names.
+    mcse_dir <- file.path(directory,"MCSE")
+    dir.create(mcse_dir,recursive=TRUE,showWarnings=FALSE)
+    mcse_stem <- paste(tag_element_i,weight_hypo,paste0("HR",HRA),paste0("n",n),sep="_")
+    for(k in c("PAF_performance_MCSE","model_selection_MCSE","risk_performance_MCSE",
+               "coverage_MCSE","effect_function_MCSE"))
+      write.csv(summary_tables[[k]],file.path(mcse_dir,paste0(mcse_stem,"_",k,".csv")),row.names=FALSE)
+
     .plot_IC_selected_models <- function(est_weight_bic_selected_wce = est_weight_bic_selected_wce,
                                          tag = "BIC selected WCE MSMs ", tag2 = NULL){
       est_weight_bic_selected_wce <- as.data.frame(est_weight_bic_selected_wce)
@@ -650,8 +847,8 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
     #### SAVE the plots
     file_name <- paste0(tag_element_i, "_", tag, "_Plots_HR_", HRA, "_scena_", weight_hypo, "_cutoff_", true_cutoff,
                         "_nsim_", n_sim, "_n_", n)
-    pdf(file = paste0(directory, file_name, "_plots.pdf"), height = 6, width = 8)
-    
+ 
+    pdf(file = paste0(directory, file_name, "_plots.pdf"), height = 7, width = 11)
     # Combine all plots into one list
     all_plots <- list(
       plot_P0_bias,
@@ -683,7 +880,10 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
     #   grid.arrange(grobs = plots_to_print, nrow = 2, ncol = 2)
     # }
   return(list(summary_tables = summary_tables,
+              analysis_setting = list(HR=HRA,N=n,scenario=weight_hypo), # [REV-RUN]
               all_plots = all_plots,
+              plots_by_model = plots_by_model, # [REV-DISPLAY]
+              cum_effect_coefficients = cum_effect_coefficients, # [REV-MCSE]
               plot_P0_bias = plot_P0_bias, 
               plot_PAF_bias = plot_PAF_bias,
               plot_AIC_selected = plot_AIC_selected,
@@ -692,15 +892,119 @@ get_summary_tables_and_plots <- function(list_model_output = list_model_output, 
 
 
 
-#######################################
-list_scenario1 <- readRDS("~/output/weight1_half_hr4_n_1000_nsim_100_T0L1.rds")
-summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 1000, weight_hypo = "decreasing",
-                    true_cutoff = 50, tag = "T0L1", HRA = 4,
-                    models_to_compare = c( "cox_ipw_null", "cox_unadj_current" , "cox_unadj_cum_half" , "cox_unadj_wce_1knots" ,
-                                           "cox_ipw_current", "cox_ipw_cum_half", "cox_ipw_cum_whole", 
-                                           "cox_ipw_wce_1knots_half", "cox_ipw_wce_2knots_half", "cox_ipw_wce_3knots_half",
-                                           "cox_ipw_wce_1knots_half_right", "cox_ipw_wce_2knots_half_right", "cox_ipw_wce_3knots_half_right", 
-                                           "cox_ipw_wce_1knots_half_left", "cox_ipw_wce_2knots_half_left", "cox_ipw_wce_3knots_half_left",
-                                           "cox_ipw_wce_1knots_whole_right", "cox_ipw_wce_2knots_whole_right", "cox_ipw_wce_3knots_whole_right",
-                                           "BIC_selected_model", "AIC_selected_model"),
-                    directory = "~/results/" )
+################################################
+#####     With censoring 15%        ############
+# function to get summary plot also changed ("nevent" changed to "proba_observed")
+list_scenario1 <- readRDS("output/censor/weight1_half_hr4_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 10000, weight_hypo = "decreasing",
+                        directory = dir_out, 
+                        true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 4 )
+summary_scenario1$summary_tables$coverage_summary
+
+list_scenario2 <- readRDS("output/censor/weight2_half_hr4_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario2 <- get_summary_tables_and_plots(list_model_output = list_scenario2, n = 10000, weight_hypo = "middle_peak",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 4 )
+summary_scenario2$summary_tables$coverage_summary
+
+list_scenario3 <- readRDS("output/censor/weight3_half_hr4_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario3 <- get_summary_tables_and_plots(list_model_output = list_scenario3, n = 10000, weight_hypo = "constant",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+summary_scenario3$summary_tables$coverage_summary
+
+list_scenario4 <- readRDS("output/censor/weight4_half_hr4_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario4 <- get_summary_tables_and_plots(list_model_output = list_scenario4, n = 10000, weight_hypo = "only_current",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 4 )
+summary_scenario4$summary_tables$coverage_summary
+
+################################################
+#####     With censoring, HR = 2    ############
+# (need to recalculate the true PAF!)
+list_scenario1 <- readRDS("output/censor/weight1_half_hr2_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 10000, weight_hypo = "decreasing",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 2 )
+summary_scenario1$summary_tables$coverage_summary
+
+# HR = 1.5
+list_scenario1 <- readRDS("output/censor/weight1_half_hr15_n_10000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 10000, weight_hypo = "decreasing",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 1.5 )
+# HR = 2
+list_scenario2 <- readRDS("output/censor/weight2_half_hr2_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario2 <- get_summary_tables_and_plots(list_model_output = list_scenario2, n = 10000, weight_hypo = "middle_peak",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 2 )
+summary_scenario2$summary_tables$coverage_summary
+
+# HR = 1.5
+list_scenario2 <- readRDS("output/censor/weight2_half_hr15_n_10000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario2 <- get_summary_tables_and_plots(list_model_output = list_scenario2, n = 10000, weight_hypo = "middle_peak",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 1.5 )
+# HR = 2
+list_scenario3 <- readRDS(paste0(dir_folder,"/output/censor/weight3_half_hr2_n_10000_nsim_100_T0L1_lowrisk_CI.rds") )
+summary_scenario3 <- get_summary_tables_and_plots(list_model_output = list_scenario3, n = 10000, weight_hypo = "constant",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 2 )
+summary_scenario3$summary_tables$coverage_summary
+
+#HR = 2
+list_scenario4 <- readRDS("output/censor/weight4_half_hr2_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario4 <- get_summary_tables_and_plots(list_model_output = list_scenario4, n = 10000, weight_hypo = "only_current",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 2 )
+summary_scenario4$summary_tables$coverage_summary
+
+# HR = 1.5
+list_scenario3 <- readRDS("output/censor/weight3_half_hr15_n_10000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario3 <- get_summary_tables_and_plots(list_model_output = list_scenario3, n = 10000, weight_hypo = "constant",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 1.5 )
+
+# HR = 1.5
+list_scenario4 <- readRDS("output/censor/weight4_half_hr15_n_10000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario4 <- get_summary_tables_and_plots(list_model_output = list_scenario4, n = 10000, weight_hypo = "only_current",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 1.5 )
+
+###########################################
+####    With censoring, N = 50000    ######
+list_scenario1 <- readRDS("output/censor/weight1_half_hr4_n_50000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 50000, weight_hypo = "decreasing",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+
+list_scenario2 <- readRDS("output/censor/weight2_half_hr4_n_50000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario2 <- get_summary_tables_and_plots(list_model_output = list_scenario2, n = 50000, weight_hypo = "middle_peak",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+
+list_scenario3 <- readRDS("output/censor/weight3_half_hr4_n_50000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario3 <- get_summary_tables_and_plots(list_model_output = list_scenario3, n = 50000, weight_hypo = "constant",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+
+list_scenario4 <- readRDS("output/censor/weight4_half_hr4_n_50000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario4 <- get_summary_tables_and_plots(list_model_output = list_scenario4, n = 50000, weight_hypo = "only_current",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+
+# HR=2  ###########################################
+# list_scenario1 <- readRDS("output/censor/weight1_half_hr2_n_50000_nsim_100_T0L1_lowrisk.rds")
+# summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 50000, weight_hypo = "decreasing",
+#                                                   directory = dir_out, 
+#                                                   true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 2 )
+# 
+# list_scenario3 <- readRDS("~/R/WCE/09_Main_analyses_for_article/output/censor/weight3_half_hr2_n_50000_nsim_100_T0L1_lowrisk.rds")
+# summary_scenario3 <- get_summary_tables_and_plots(list_model_output = list_scenario3, n = 50000, weight_hypo = "constant",
+#                                                   directory = dir_out, 
+#                                                   true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 2 )
+# 
+# list_scenario4 <- readRDS("~/R/WCE/09_Main_analyses_for_article/output/censor/weight4_half_hr2_n_50000_nsim_100_T0L1_lowrisk.rds")
+# summary_scenario4 <- get_summary_tables_and_plots(list_model_output = list_scenario4, n = 50000, weight_hypo = "only_current",
+#                                                   directory = dir_out, 
+#                                                   true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 2 )
