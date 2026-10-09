@@ -1,0 +1,831 @@
+
+WCE_figure_path <- "/results/revise/figures/"
+dir.create(WCE_figure_path,recursive=TRUE,showWarnings=FALSE)
+## 
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(ggnewscale) 
+
+#####################################################
+#  HR=4, N=10000.
+list_scenario1 <- readRDS("output/censor/weight1_half_hr4_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 10000, weight_hypo = "decreasing",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 4 )
+summary_scenario1$summary_tables$coverage_summary
+
+list_scenario2 <- readRDS("output/censor/weight2_half_hr4_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario2 <- get_summary_tables_and_plots(list_model_output = list_scenario2, n = 10000, weight_hypo = "middle_peak",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 4 )
+
+list_scenario3 <- readRDS("output/censor/weight3_half_hr4_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario3 <- get_summary_tables_and_plots(list_model_output = list_scenario3, n = 10000, weight_hypo = "constant",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+
+list_scenario4 <- readRDS("output/censor/weight4_half_hr4_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario4 <- get_summary_tables_and_plots(list_model_output = list_scenario4, n = 10000, weight_hypo = "only_current",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 4 )
+
+HRA = 4
+#################################################
+#####       Scenarios with HR = 2, N=10000       #####
+HRA = 2
+list_scenario1 <- readRDS("output/censor/weight1_half_hr2_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 10000, weight_hypo = "decreasing",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 2 )
+
+list_scenario2 <- readRDS("output/censor/weight2_half_hr2_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario2 <- get_summary_tables_and_plots(list_model_output = list_scenario2, n = 10000, weight_hypo = "middle_peak",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 2 )
+
+list_scenario3 <- readRDS(paste0(dir_folder,"/output/censor/weight3_half_hr2_n_10000_nsim_100_T0L1_lowrisk_CI.rds") )
+summary_scenario3 <- get_summary_tables_and_plots(list_model_output = list_scenario3, n = 10000, weight_hypo = "constant",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 2 )
+
+list_scenario4 <- readRDS("output/censor/weight4_half_hr2_n_10000_nsim_100_T0L1_lowrisk_CI.rds")
+summary_scenario4 <- get_summary_tables_and_plots(list_model_output = list_scenario4, n = 10000, weight_hypo = "only_current",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 2 )
+
+#################################################
+#####       Scenarios with HR = 1.5,N = 10000       #####
+HRA = 1.5
+list_scenario1 <- readRDS("output/censor/weight1_half_hr15_n_10000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 10000, weight_hypo = "decreasing",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 1.5 )
+
+list_scenario2 <- readRDS("output/censor/weight2_half_hr15_n_10000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario2 <- get_summary_tables_and_plots(list_model_output = list_scenario2, n = 10000, weight_hypo = "middle_peak",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor_CI", lambda0 = 0.0005, HRA = 1.5 )
+
+list_scenario3 <- readRDS("output/censor/weight3_half_hr15_n_10000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario3 <- get_summary_tables_and_plots(list_model_output = list_scenario3, n = 10000, weight_hypo = "constant",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 1.5 )
+
+list_scenario4 <- readRDS("output/censor/weight4_half_hr15_n_10000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario4 <- get_summary_tables_and_plots(list_model_output = list_scenario4, n = 10000, weight_hypo = "only_current",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 1.5 )
+
+#####################################################################################
+#####       Scenarios with N = 50000 :       #####
+list_scenario1 <- readRDS("output/censor/weight1_half_hr4_n_50000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario1 <- get_summary_tables_and_plots(list_model_output = list_scenario1, n = 50000, weight_hypo = "decreasing",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+
+list_scenario2 <- readRDS("output/censor/weight2_half_hr4_n_50000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario2 <- get_summary_tables_and_plots(list_model_output = list_scenario2, n = 50000, weight_hypo = "middle_peak",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+
+list_scenario3 <- readRDS("output/censor/weight3_half_hr4_n_50000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario3 <- get_summary_tables_and_plots(list_model_output = list_scenario3, n = 50000, weight_hypo = "constant",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+
+list_scenario4 <- readRDS("output/censor/weight4_half_hr4_n_50000_nsim_100_T0L1_lowrisk.rds")
+summary_scenario4 <- get_summary_tables_and_plots(list_model_output = list_scenario4, n = 50000, weight_hypo = "only_current",
+                                                  directory = dir_out, 
+                                                  true_cutoff = 50, tag = "LOWRISK_censor", lambda0 = 0.0005, HRA = 4 )
+HRA = 4
+size = 50000
+#####################################################################################
+#####       Scenarios with N = 50000 :       #####
+# [REV-RUN] Original non-R annotation: input: summary_scenario1, summary_scenario2, summary_scenario3, summary_scenario4, 
+# HRA # [REV-RUN] Original interactive print; setting is assigned below.
+# [REV-RUN/MCSE] Prevent setting-label mismatch and export MCSE for these same four summaries.
+WCE_HR = 4
+WCE_N = 50000
+HRA <- WCE_HR
+size <- WCE_N
+figure_path <- WCE_figure_path
+
+
+#  Applies the same labels/order when reusing previously saved summaries.
+summary_scenario1 <- wce_refresh_summary(summary_scenario1)
+summary_scenario2 <- wce_refresh_summary(summary_scenario2)
+summary_scenario3 <- wce_refresh_summary(summary_scenario3)
+summary_scenario4 <- wce_refresh_summary(summary_scenario4)
+wce_summaries <- list(summary_scenario1,summary_scenario2,summary_scenario3,summary_scenario4)
+wce_export_MCSE(wce_summaries,HRA,size,file.path(figure_path,"MCSE"))
+
+
+# get rmse for bic/aic selected models:
+compute_rmse_for_scenario <- function(summary_scenario) {
+  
+  true_paf <- summary_scenario$summary_tables$PAF_true_mat[1, 1]
+  paf_mat <- summary_scenario$summary_tables$PAF_est_mat
+  min_bic_model_list <- summary_scenario$summary_tables$min_bic_ipw_model_names
+  min_aic_model_list <- summary_scenario$summary_tables$min_aic_ipw_model_names
+  
+  compute_rmse_from_model_list <- function(model_list, paf_mat, true_paf) {
+    selected_paf <- numeric(length(model_list))
+    for (i in seq_along(model_list)) {
+      model_name <- model_list[i]
+      selected_paf[i] <- paf_mat[i, model_name]
+    }
+    sqrt(mean((selected_paf - true_paf)^2, na.rm = TRUE))
+  }
+  
+  bic_selected_rmse <- compute_rmse_from_model_list(min_bic_model_list, paf_mat, true_paf)
+  aic_selected_rmse <- compute_rmse_from_model_list(min_aic_model_list, paf_mat, true_paf)
+  
+  return(list(
+    bic_selected_rmse = bic_selected_rmse,
+    aic_selected_rmse = aic_selected_rmse
+  ))
+}
+bic_selected_rmse_scena1 <- compute_rmse_for_scenario(summary_scenario1)$bic_selected_rmse
+aic_selected_rmse_scena1 <- compute_rmse_for_scenario(summary_scenario1)$aic_selected_rmse
+bic_selected_rmse_scena2 <- compute_rmse_for_scenario(summary_scenario2)$bic_selected_rmse
+aic_selected_rmse_scena2 <- compute_rmse_for_scenario(summary_scenario2)$aic_selected_rmse
+bic_selected_rmse_scena3 <- compute_rmse_for_scenario(summary_scenario3)$bic_selected_rmse
+aic_selected_rmse_scena3 <- compute_rmse_for_scenario(summary_scenario3)$aic_selected_rmse
+bic_selected_rmse_scena4 <- compute_rmse_for_scenario(summary_scenario4)$bic_selected_rmse
+aic_selected_rmse_scena4 <- compute_rmse_for_scenario(summary_scenario4)$aic_selected_rmse
+
+#########################
+p1a <- summary_scenario1$plot_PAF_bias
+p1a <- p1a + ggtitle("Scenario 1 Decreasing weights")+
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        axis.title.x = element_text(size = 12, face = "plain"),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(size = 12)) 
+
+p1b <- summary_scenario2$plot_PAF_bias
+p1b <- p1b + ggtitle("Scenario 2 Middle-peak weights")+
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) +
+  theme(
+    axis.title.x = element_text(size = 12, face = "plain"),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  ) 
+
+p1c <- summary_scenario3$plot_PAF_bias
+p1c <- p1c + ggtitle("Scenario 3 Constant weights") +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        axis.title.x = element_text(size = 12, face = "plain"),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(size = 12))
+
+p1d <- summary_scenario4$plot_PAF_bias
+p1d <- p1d + ggtitle("Scenario 4 Only current")+
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) +
+  theme(
+    axis.title.x = element_text(size = 12, face = "plain"),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  ) +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) 
+
+# Combine plots
+final_plot <- (p1a | p1b) / (p1c | p1d)
+#+  plot_annotation(title = paste("PAF Results for n = ", size, ", HR=", HRA))
+  
+ggsave(paste0(figure_path, "figure_1_HR",HRA,"_size_", size, ".tiff"), plot = final_plot, 
+       width = 13, height = 11, dpi = 200, units = "in", device = "tiff")
+
+###############################################################
+# model_names <- names(list_scenario1[[1]][[1]])
+# model_names <- c(model_names, "BIC_selected_model", "AIC_selected_model")
+# [REV-DISPLAY] Shared order, keeping original internal IDs.
+model_names <- model_dictionary()$model_id
+
+frequency_scena1_BIC <- as.data.frame(summary_scenario1$summary_tables$min_bic_ipw_model_table)%>%
+                                  setNames(c("model_names", "scena1_BIC"))
+frequency_scena2_BIC <-summary_scenario2$summary_tables$min_bic_ipw_model_table %>% as.data.frame() %>%
+                                  setNames(c("model_names", "scena2_BIC"))
+frequency_scena3_BIC <-summary_scenario3$summary_tables$min_bic_ipw_model_table %>% as.data.frame() %>%
+                                  setNames(c("model_names", "scena3_BIC"))
+frequency_scena4_BIC <- summary_scenario4$summary_tables$min_bic_ipw_model_table %>% as.data.frame()
+
+frequency_scena1_AIC <- summary_scenario1$summary_tables$min_aic_ipw_model_table %>% as.data.frame()%>%
+                                  setNames(c("model_names", "scena1_AIC"))
+frequency_scena2_AIC <-summary_scenario2$summary_tables$min_aic_ipw_model_table %>% as.data.frame()%>%
+                                  setNames(c("model_names", "scena2_AIC"))
+frequency_scena3_AIC <-summary_scenario3$summary_tables$min_aic_ipw_model_table %>% as.data.frame()%>%
+                                  setNames(c("model_names", "scena3_AIC"))
+frequency_scena4_AIC <- summary_scenario4$summary_tables$min_aic_ipw_model_table %>% as.data.frame() 
+                                 
+
+df_select_frequency <- as.data.frame( model_names)
+df_select_frequency <- df_select_frequency %>% left_join(frequency_scena1_BIC, by = "model_names") %>% 
+                                left_join(frequency_scena2_BIC,  by = "model_names")%>% 
+                                left_join(frequency_scena3_BIC,  by = "model_names")%>% 
+                                left_join(frequency_scena1_AIC,  by = "model_names")%>% 
+                                left_join(frequency_scena2_AIC,  by = "model_names")%>% 
+                                left_join(frequency_scena3_AIC,  by = "model_names")%>%
+                                mutate(
+                                  scena4_BIC = 0,
+                                  scena4_AIC = 0
+                                )
+# [REV-MCSE] Scenario4 frequency is computed from selected IDs below.
+df_select_frequency[is.na(df_select_frequency)] <- 0
+df_select_frequency[which(df_select_frequency$model_names %in% c("BIC_selected_model", "AIC_selected_model")), 2:9] <- NA
+# df_select_frequency <- df_select_frequency[-c(2,3,4),]
+# df_select_frequency <- df_select_frequency[, 1:7]
+
+colnames(df_select_frequency) <- gsub("scena", "Scenario ", colnames(df_select_frequency) )
+
+# Reshape to long format
+df_long <- df_select_frequency %>%
+  pivot_longer(
+    cols = -model_names,
+    names_to = "scenario_metric",
+    values_to = "frequency"
+  ) %>%
+  mutate(
+    metric = ifelse(str_detect(scenario_metric, "BIC"), "BIC", "AIC"),
+    scenario = str_extract(scenario_metric, "Scenario [0-9]+")
+  )
+
+# [REV-DISPLAY/MCSE] Actual selection proportions (not hard-coded Scenario4=100).
+df_long <- wce_frequency_data(wce_summaries)
+df_long <- wce_add_display(df_long)
+
+#################################
+frequency_heatmap <- ggplot(df_long %>% filter(!is.na(model_display)), 
+                           aes(x = scenario, y = model_display, fill = frequency)) +
+  geom_tile() +
+  facet_wrap(~ metric, ncol = 1) +  # AIC and BIC
+  scale_fill_gradientn(
+    colors = c("#fffbf9", "#fc9272", "#de2d26", "black"),
+    values = scales::rescale(c(0, 20, 60, 100)),
+    limits = c(0, 100),
+    name = "Frequency (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"),
+    panel.grid = element_blank(),
+    plot.background = element_rect(fill = "white")
+  ) + labs(
+    title = paste0("Frenquency of models selected by AIC and BIC, HR = ", HRA),
+    x = "Scenario",
+    y = "Model",
+    fill = "Frequency (%)"
+  ) 
+frequency_heatmap
+ggsave(paste0(figure_path, "figure_heatmap", HRA,"_n",size,".tiff"), plot = frequency_heatmap, 
+       width = 9, height = 8, dpi = 200, device = "tiff")
+
+#######################################################
+
+# PAF RMSE
+scena1_rmse = summary_scenario1$summary_tables$estimands_mat[, "PAF rmse"] %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column(var = "model") %>%
+  dplyr::filter(model %in% model_names)
+scena2_rmse = summary_scenario2$summary_tables$estimands_mat[, "PAF rmse"] %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column(var = "model") %>%
+  dplyr::filter(model %in% model_names)
+scena3_rmse = summary_scenario3$summary_tables$estimands_mat[, "PAF rmse"] %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column(var = "model") %>%
+  dplyr::filter(model %in% model_names)
+scena4_rmse = summary_scenario4$summary_tables$estimands_mat[, "PAF rmse"] %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column(var = "model") %>%
+  dplyr::filter(model %in% model_names)
+# [REV-DISPLAY/MCSE/NULL] Named RMSE extraction avoids positional model mismatches.
+df_long <- wce_rmse_data(wce_summaries)
+df_long <- wce_add_display(df_long)
+
+df_rmse <- df_long %>% dplyr:: filter(Scenario == "Scenario1")
+
+rmse_scena1 <- ggplot(df_rmse, aes(x = Scenario, y = model_names, fill = RMSE)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "#00004d", name = "RMSE") +
+  labs(
+    title = "RMSE of PAF estimators from different models across scenarios",
+    x = "Scenario",
+    y = "Model"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.y = element_text(size = 8),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+###########
+## figure for RMSE
+
+library(patchwork)
+# Create a plot for each scenario separately
+# Create plot for each scenario
+plot_list <- lapply(unique(df_long$Scenario), function(scen) {
+  df_sub <- df_long %>% dplyr::filter(!is.na(model_display)) %>% 
+    dplyr::filter(Scenario == scen)
+  # [REV-NULL] Null is shown numerically in grey and excluded from colour limits/quantiles.
+  df_null <- df_sub[df_sub$model_names=="cox_ipw_null",,drop=FALSE]
+  df_sub <- df_sub[df_sub$model_names!="cox_ipw_null",,drop=FALSE]
+  
+  p <- ggplot(df_sub, aes(x = 1, y = model_display, fill = RMSE)) +
+    geom_tile(color = "white", width = 0.9) +
+    # [REV-NULL] Fixed neutral layer has no fill mapping.
+    geom_tile(data=df_null,aes(x=1,y=model_display),inherit.aes=FALSE,fill="#D9D9D9",color="white",width=0.9) +
+    geom_text(data=df_null,aes(x=1,y=model_display,label=sprintf("%.3f",RMSE)),inherit.aes=FALSE,size=2.5) +
+    scale_y_discrete(limits=rev(model_dictionary()$axis_label),drop=FALSE) +
+    scale_fill_gradientn(
+      colours = c("#00004d", "#4d4d99", "#9999b3", "#ddddf0", "white"),
+      breaks = c( 0.05, 0.1, 0.15, 0.2),
+      labels = scales::number_format(accuracy = 0.01),
+      values = scales::rescale(c(min(df_sub$RMSE), quantile(df_sub$RMSE, 0.25),
+                                 median(df_sub$RMSE), quantile(df_sub$RMSE, 0.75),
+                                 max(df_sub$RMSE)))    ) +
+    theme_minimal(base_size = 11) +
+    labs(title = scen, x = NULL, y = NULL) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks = element_blank(),
+      plot.title = element_text(size = 11, hjust = 0.5),
+      legend.position = "bottom",
+      legend.key.height = unit(0.35, "cm"),
+      legend.key.width = unit(0.7, "cm"),
+      legend.text = element_text(size = 6),
+      legend.title = element_text(size = 7),
+      panel.grid = element_blank()
+    )
+  # 计算该场景的数据范围，用于自动生成刻度
+  rmse_range <- range(df_sub$RMSE, na.rm = TRUE)
+  p <- ggplot(df_sub, aes(x = 1, y = model_display, fill = RMSE)) +
+    geom_tile(color = "white", width = 0.9) +
+    # [REV-NULL] Fixed neutral layer has no fill mapping.
+    geom_tile(data=df_null,aes(x=1,y=model_display),inherit.aes=FALSE,fill="#D9D9D9",color="white",width=0.9) +
+    geom_text(data=df_null,aes(x=1,y=model_display,label=sprintf("%.3f",RMSE)),inherit.aes=FALSE,size=2.5) +
+    scale_y_discrete(limits=rev(model_dictionary()$axis_label),drop=FALSE) +
+    scale_fill_gradientn(
+      colours = c("#00004d", "#4d4d99", "#9999b3", "#ddddf0", "white"),
+      # 将五个数据点（最小值、Q1、中位数、Q3、最大值）映射到颜色向量的五个位置
+      values = scales::rescale(c(
+        min(df_sub$RMSE),
+        quantile(df_sub$RMSE, 0.25),
+        median(df_sub$RMSE),
+        quantile(df_sub$RMSE, 0.75),
+        max(df_sub$RMSE)
+      )),
+      # 自动生成该场景范围内的美观刻度（例如 0.11, 0.12, 0.13, 0.14, 0.15）
+      breaks = pretty(rmse_range, n = 4),
+      labels = scales::number_format(accuracy = 0.01),
+      name = paste("RMSE\n")  # 每个图独立图例标题（可选）
+    ) +
+    labs(title = scen, x = NULL, y = NULL) +
+    theme_minimal(base_size = 11) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks = element_blank(),
+      plot.title = element_text(size = 11, hjust = 0.5),
+      legend.position = "bottom",
+      legend.key.height = unit(0.35, "cm"),
+      legend.key.width = unit(0.7, "cm"),
+      legend.text = element_text(size = 6),
+      legend.title = element_text(size = 7),
+      panel.grid = element_blank()
+    )
+  # Remove y-axis text for Scenario 2 and 3
+  if (scen %in% c("Scenario2", "Scenario3", "Scenario4")) {
+    p <- p + theme(axis.text.y = element_blank(),
+                   legend.title = element_blank()    )
+  } else {
+    p <- p + theme(axis.text.y = element_text(size = 9))+
+      labs(y = "Model")
+  }
+  return(p)
+})
+
+# Combine the plots horizontally
+final_plot <- wrap_plots(plot_list, nrow = 1)
+# Add a global title
+final_plot <- final_plot +
+  plot_annotation(title =paste0( "RMSE of PAF estimators from different models across scenarios, HR = ", HRA),
+                  theme = theme(plot.title = element_text(hjust = 0.5))
+                                )
+final_plot
+
+ggsave(paste0(figure_path,"final_plot", HRA,"_n",size,".tiff"), plot = final_plot, 
+       width = 10, height = 8, dpi = 200, device = "tiff")
+
+##########
+## different colour scale
+
+scenario_colours <- list(
+  Scenario1 = c(low = "#EAF2F8", high = "#24547A"), # blue
+  Scenario2 = c(low = "#E7F3EF", high = "#167365"), # teal
+  Scenario3 = c(low = "#F0EBF6", high = "#705388"), # purple
+  Scenario4 = c(low = "#FFF0E3", high = "#BC602B")  # orange
+)
+
+plot_list <- lapply(unique(as.character(df_long$Scenario)), function(scen) {
+  scenario_key <- gsub("[[:space:]]", "", scen)
+  pal <- scenario_colours[[scenario_key]]
+  if (is.null(pal)) stop("No palette defined for ", scen)
+  
+  df_all <- df_long %>%
+    dplyr::filter(!is.na(model_display), as.character(Scenario) == scen)
+  df_null <- df_all[df_all$model_names == "cox_ipw_null", , drop = FALSE]
+  df_sub <- df_all[df_all$model_names != "cox_ipw_null", , drop = FALSE]
+  
+  rmse_range <- range(df_sub$RMSE, na.rm = TRUE)
+  if (!all(is.finite(rmse_range)) || diff(rmse_range) <= 0)
+    stop("Cannot make RMSE color scale for ", scen, ": check the RMSE values.")
+  
+  p <- ggplot(df_sub, aes(x = 1, y = model_display, fill = RMSE)) +
+    geom_tile(color = "white", width = 0.9) +
+    # Null MSM is outside the scenario-specific scale.
+    geom_tile(data = df_null, aes(x = 1, y = model_display),
+              inherit.aes = FALSE, fill = "#D9D9D9", color = "white",
+              width = 0.9) +
+    geom_text(data = df_null,
+              aes(x = 1, y = model_display, label = sprintf("%.3f", RMSE)),
+              inherit.aes = FALSE, size = 2.5, colour = "black") +
+    scale_y_discrete(limits = rev(model_dictionary()$axis_label), drop = FALSE) +
+    scale_fill_gradient(
+      low = unname(pal["low"]), high = unname(pal["high"]),
+      limits = rmse_range,
+      breaks = rmse_range,
+      labels = sprintf("%.3f", rmse_range),
+      name = NULL,
+      guide = guide_colorbar(barwidth = grid::unit(2.1, "cm"),
+                             barheight = grid::unit(0.28, "cm"))
+    ) +
+    labs(title = scen, x = NULL, y = NULL) +
+    theme_minimal(base_size = 11) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks = element_blank(),
+      plot.title = element_text(size = 11, hjust = 0.5),
+      legend.position = "bottom",
+      legend.text = element_text(size = 7),
+      panel.grid = element_blank()
+    )
+  
+  if (scenario_key != "Scenario1") {
+    p <- p + theme(axis.text.y = element_blank())
+  } else {
+    p <- p + theme(axis.text.y = element_text(size = 11)) + labs(y = "Model")
+  }
+  p
+})
+
+final_plot <- patchwork::wrap_plots(plot_list, nrow = 1) +
+  patchwork::plot_annotation(
+    title = paste0("RMSE of PAF estimators from different models across scenarios, HR = ", HRA),
+    theme = theme(plot.title = element_text(hjust = 0.5))
+  )
+
+ggsave(file.path(figure_path, paste0("figure_RMSE_four_palettes_HR", HRA, "_n", size, ".tiff")),
+       plot = final_plot, width = 10, height = 8, dpi = 200,
+       units = "in", device = "tiff")
+
+
+
+####################################
+#####      Supplementary      ######
+generate_true_weight <- function(true_cutoff, weight_hypo) {
+  x <- 0:true_cutoff
+  if (weight_hypo == "decreasing") {
+    y <- exp(-0.1 * x)
+    weights <- y / sum(y)
+  } else if (weight_hypo == "middle_peak") {
+    mean <- 25
+    sd <- 0.1
+    x_for_density <- seq(mean - 4 * sd, mean + 4 * sd, length.out = true_cutoff + 1)
+    y <- dnorm(x_for_density, mean = mean, sd = sd)
+    weights <- y / sum(y)
+  } else if (weight_hypo == "constant") {
+    weights <- rep(1 / (true_cutoff + 1), true_cutoff + 1)
+  } else if (weight_hypo == "only_current") {
+    weights <- c(1, rep(0, true_cutoff))
+  } else {
+    stop("Invalid weight_hypo value")
+  }
+  return(data.frame(
+    lag = 0:true_cutoff,
+    weight = weights,
+    scenario = weight_hypo
+  ))
+}
+
+# Generate data for all 4 scenarios
+true_cutoff <- 50
+scenarios <- c("decreasing", "middle_peak", "constant", "only_current")
+
+df_weights <- bind_rows(lapply(scenarios, function(s) {
+  generate_true_weight(true_cutoff, s)
+}))
+# Clean scenario labels for plot
+df_weights$scenario <- recode(df_weights$scenario,
+                              decreasing = "Scenario 1 : Decreasing",
+                              middle_peak = "Scenario 2: Middle-peaked",
+                              constant = "Scenario 3: Constant",
+                              only_current = "Scenario 4: Only current")
+df_weights$scenario <- factor(
+  df_weights$scenario,
+  levels = c("Scenario 1 : Decreasing", "Scenario 2: Middle-peaked", "Scenario 3: Constant", "Scenario 4: Only current")
+)
+
+# Plot
+ggplot(df_weights, aes(x = lag, y = weight)) +
+  geom_line(color = "#00004d", size = 1) +
+  facet_wrap(~ scenario, scales = "free_y", ncol = 2) +
+  labs(
+    title = "True Weight Functions Across Scenarios",
+    x = "Time since exposure (months)",
+    y = "Weight"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    strip.text = element_text(face = "bold")
+  )
+
+# ###############################################
+# ###    group by scenario? 
+# model_names <- names(list_scenario1[[1]][[1]])
+# 
+# p_bias <- p1a
+# #p_freq <- frequency_scena1_bic
+# p_rmse <- rmse_scena1
+# 
+# # Define the complete model list (in desired order)
+# model_levels <- c("ipw null", "unadj current","unadj cum half", "unadj wce 1knots","ipw current",
+#    "ipw cum half", "ipw cum whole", "ipw wce 1knots half", "ipw wce 2knots half", "ipw wce 3knots half",          
+#    "ipw wce 1knots half right", "ipw wce 2knots half right",  "ipw wce 3knots half right",
+#    "ipw wce 1knots half left", "ipw wce 2knots half left", "ipw wce 3knots half left",
+#    "ipw wce 1knots whole right","ipw wce 2knots whole right","ipw wce 3knots whole right", 
+#     "ipw wce 1knots whole" , "ipw wce 2knots whole", "ipw wce 3knots whole",
+#     "ipw wce 1knots whole left","ipw wce 2knots whole left",  "ipw wce 3knots whole left",
+#   "AIC selected model", "BIC selected model"
+# )
+# 
+# # Apply to all dataframes used
+# #df_bias$model_names <- factor(df_bias$model_names, levels = model_levels)
+# df_frequency_1 <- df_long %>% dplyr::filter(scenario_metric  == "Scenario 1_BIC") 
+#                           
+# df_frequency_1$model_names <- gsub("cox ", "", df_frequency_1$model_names)
+# setdiff(unique(df_frequency_1$model_names), model_levels)
+# df_frequency_1$model_names <- factor(df_frequency_1$model_names, levels = model_levels)
+# 
+# #######################
+# df_rmse$model_names <- factor(df_rmse$model_names, levels = model_levels)
+# 
+# p_freq <- ggplot(df_frequency_1, aes(x = scenario, y = model_names, fill = frequency)) +
+#   geom_tile(color = "white") +
+#   scale_fill_gradient(low = "white", high = "darkred") +
+#   theme_minimal(base_size = 12) +
+#   labs(x = "Selected frenquency", y = NULL, fill = NULL) +
+#   theme(
+#     axis.text.y = element_blank(),
+#     axis.ticks.y = element_blank(),
+#     axis.title.y = element_blank(),
+#     axis.text.x =  element_blank(),
+#     legend.text = element_text(size = 8), 
+#    # element_text(angle = 45, hjust = 1),
+#     legend.position = "bottom"
+#   )
+# p_rmse <- ggplot(df_rmse, aes(x = Scenario, y = model_names, fill = RMSE)) +
+#   geom_tile(color = "white") +
+#   scale_fill_gradient(low = "white", high = "darkblue") +
+#   theme_minimal(base_size = 12) +
+#   labs(x = "RMSE", y = NULL, fill = NULL) +
+#   theme(
+#     axis.text.y = element_blank(),
+#     axis.ticks.y = element_blank(),
+#     axis.title.y = element_blank(),
+#     axis.text.x = element_blank(),
+#     #element_text(angle = 45, hjust = 1),
+#     legend.text = element_text(size = 8), 
+#     legend.position = "bottom"
+#   )
+# 
+# final_plot <- p_bias + p_freq + p_rmse +
+#   plot_layout(ncol = 3, widths = c(3, 1, 1)) & 
+#   theme(plot.margin = margin(10, 10, 10, 10))
+# ggsave("~/R/WCE/09_Main_analyses_for_article/results/figures/combined_plot.tiff", plot = final_plot, 
+#        width = 12, height = 12, dpi = 300, device = "tiff")
+
+###############################
+##   figure 2 causal effect estimation variance display 
+
+cum_half <- sapply(
+  list_scenario3$list_model_output,
+  function(x) x$cox_ipw_cum_half$coefficients[, "coef"]
+)
+coef_vec <- cum_half       # length = 100
+n_sim    <- length(coef_vec)
+time_vec <- 0:50           # time since exposure
+
+# Construct dataframe
+df_sims <- data.frame(
+  sim  = rep(1:n_sim, each = length(time_vec)),
+  time = rep(time_vec,    n_sim),
+  coef = rep(coef_vec,    each = length(time_vec)),
+  group = "simulation")
+
+# true and mean values
+true_value <- log(4) / 51
+mean_value <- mean(coef_vec)
+
+df_mean <- data.frame(
+  time  = time_vec,
+  coef  = mean_value,
+  group = "mean")
+
+df_true <- data.frame(
+  time  = time_vec,
+  coef  = true_value,
+  group = "true")
+
+df_plot <- bind_rows(df_sims, df_mean, df_true)
+
+p1 <- ggplot(df_plot, aes(x = time, y = coef, group = interaction(group, sim), color = group)) +
+  geom_line(    data = subset(df_plot, group == "simulation"),
+    size = 0.5,
+    alpha = 0.6  ) +
+  geom_line(    data = subset(df_plot, group == "mean"),
+    size = 1.2  ) +
+  geom_line(    data = subset(df_plot, group == "true"),
+    size = 1.2  ) +
+  scale_color_manual(    values = c(simulation = "grey70", mean = "blue4", true = "red4"),
+    labels = c(simulation = "Simulations", mean = "Mean estimate", true = "True effect")  ) +
+  theme_minimal() +
+  scale_y_continuous(limits = c(-0.1, 0.2)) +
+  labs(    x     = "Time since exposure",
+    y     = "Estimated coefficient",
+    title = "Unweighted cumulative exposure",
+    color = "Legend"  ) +
+  theme(    plot.title      = element_text(hjust = 0.5),
+    axis.text       = element_text(size = 12),
+    legend.position = "none"   # keep legend here if you want only one legend
+    )
+
+#####
+make_wce_plot <- function(list_model_output,
+                          model_name,
+                          beta_true,
+                          title = NULL,
+                          y_limits = c(-0.1, 0.2),
+                          show_legend = FALSE,
+                          show_y = TRUE) {
+  
+  # list_model_output 应是一组模拟结果，每个元素对应一次模拟
+  weights <- lapply(list_model_output, function(x) {
+    model <- x[[model_name]]
+    if (is.null(model) || is.null(model[["coef_weight_predict"]])) {
+      stop("Missing coef_weight_predict for model: ", model_name)
+    }
+    as.numeric(model[["coef_weight_predict"]])
+  })
+  
+  n_lag <- length(weights[[1]])
+  if (!all(lengths(weights) == n_lag)) {
+    stop("The number of lag coefficients differs between simulations.")
+  }
+  
+  est_weight_mat <- do.call(cbind, weights)
+  n_sim <- ncol(est_weight_mat)
+  time_since_expo <- 0:(n_lag - 1)
+  
+  df_wce <- as.data.frame(est_weight_mat)
+  names(df_wce) <- paste0("sim", seq_len(n_sim))
+  df_wce$time_since_expo <- time_since_expo
+  
+  df_long <- df_wce %>%
+    tidyr::pivot_longer(
+      cols = starts_with("sim"),
+      names_to = "simulation",
+      values_to = "coef"
+    ) %>%
+    dplyr::mutate(group = "simulation")
+  
+  df_mean <- df_long %>%
+    dplyr::group_by(time_since_expo) %>%
+    dplyr::summarise(coef = mean(coef), .groups = "drop") %>%
+    dplyr::mutate(group = "mean")
+  
+  df_true <- data.frame(
+    time_since_expo = time_since_expo,
+    coef = rep(beta_true / n_lag, n_lag),
+    group = "true"
+  )
+  
+  ggplot() +
+    geom_line(
+      data = df_long,
+      aes(x = time_since_expo, y = coef,
+          group = simulation, color = group),
+      linewidth = 0.5,
+      alpha = 0.6
+    ) +
+    geom_line(
+      data = df_mean,
+      aes(x = time_since_expo, y = coef, color = group),
+      linewidth = 1.3
+    ) +
+    geom_line(
+      data = df_true,
+      aes(x = time_since_expo, y = coef, color = group),
+      linewidth = 1.3
+    ) +
+    scale_color_manual(
+      values = c(
+        simulation = "grey70",
+        mean = "blue4",
+        true = "red4"
+      ),
+      labels = c(
+        simulation = "Simulations",
+        mean = "Mean estimate",
+        true = "True effect"
+      )
+    ) +
+    theme_minimal() +
+    labs(
+      title = if (is.null(title)) model_name else title,
+      x = "Time since exposure",
+      y = if (show_y) "Estimated coefficient" else NULL,
+      color = "Legend"
+    ) +
+    theme(
+      axis.text = element_text(size = 12),
+      plot.title = element_text(hjust = 0.5),
+      legend.position = if (show_legend) "right" else "none"
+    ) +
+    scale_y_continuous(limits = y_limits)
+}
+
+# list_scenario3 是原始 RDS 结果；第一层选取一组模拟结果
+list_model_output <- list_scenario3[[1]]
+
+p2 <- make_wce_plot(
+  list_model_output,
+  "cox_ipw_wce_1knots_half",
+  beta_true = log(HRA),
+  title = "1 knot, unconstrained",
+  show_legend = FALSE,
+  show_y = FALSE
+)
+
+p3 <- make_wce_plot(
+  list_model_output,
+  "cox_ipw_wce_3knots_half",
+  beta_true = log(HRA),
+  title = "3 knots, unconstrained",
+  show_legend = FALSE,
+  show_y = FALSE
+)
+
+library(patchwork)
+figure2 <- (p1 | p2 | p3) +
+  plot_layout(guides = "collect") &   # collect legends
+  theme(
+    legend.position = "bottom",       # put the legend at the bottom
+    legend.title    = element_blank() # optional: no legend title
+  )
+
+# [REV-MCSE] Figure2: reuse original coefficient construction/style, add pointwise MCSE.
+# New script5 retains the cumulative coefficient vector; old summaries can provide list_scenario3.
+cum_coef <- summary_scenario3$cum_effect_coefficients$cox_ipw_cum_half
+
+  time_vec <- 0:50; n_sim <- length(cum_coef)
+  df_sims <- data.frame(sim=rep(seq_len(n_sim),each=length(time_vec)),
+      time=rep(time_vec,n_sim),coef=rep(cum_coef,each=length(time_vec)),group="simulation")
+  df_mean <- data.frame(time=time_vec,coef=mean(cum_coef),group="mean",sim=NA)
+  df_true <- data.frame(time=time_vec,coef=log(HRA)/51,group="true",sim=NA)
+  df_plot <- bind_rows(df_sims,df_mean,df_true)
+  p1 <- ggplot(df_plot,aes(x=time,y=coef,group=interaction(group,sim),color=group)) +
+    geom_line(data=subset(df_plot,group=="simulation"),size=0.5,alpha=0.6) +
+    geom_line(data=subset(df_plot,group=="mean"),size=1.2) +
+    geom_line(data=subset(df_plot,group=="true"),size=1.2) +
+    scale_color_manual(values=c(simulation="grey70",mean="blue4",true="red4")) +
+    theme_minimal() + scale_y_continuous(limits=c(-0.1,0.2)) +
+    labs(x="Time since exposure",y="Estimated coefficient",title="Unweighted cumulative exposure") +
+    theme(plot.title=element_text(hjust=0.5),axis.text=element_text(size=12),legend.position="none")
+  p2 <- summary_scenario3$plots_by_model[["cox_ipw_wce_1knots_half"]] +
+    labs(title="1 knot, unconstrained")
+  p3 <- summary_scenario3$plots_by_model[["cox_ipw_wce_3knots_half"]] +
+    labs(title="3 knots, unconstrained")
+  figure2 <- (p1 | p2 | p3) + plot_layout(guides="collect") &
+    theme(legend.position="bottom",legend.title=element_blank())
+  ggsave(file.path(figure_path,paste0("Figure2_HR",HRA,"_n",size,".tiff")),
+      plot=figure2,width=12,height=5,dpi=300,device="tiff")
+  cum_mcse <- cbind(model="cox_ipw_cum_half",
+     mcse_effect_function(matrix(rep(cum_coef,51),ncol=51),rep(log(HRA)/51,51),lags=0:50))
+  write.csv(cum_mcse,file.path(figure_path,"MCSE",paste0("Figure2_cumulative_effect_MCSE_HR",HRA,"_n",size,".csv")),row.names=FALSE)
