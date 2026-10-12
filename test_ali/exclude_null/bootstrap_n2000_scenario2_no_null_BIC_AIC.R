@@ -1116,10 +1116,10 @@ bootstrap_PAF_parallel <- function(d, scenario, sim_id, B, n.visit = 100, n_core
 }
 
 # ============================================================
-# ---- CONFIG: change these to scale up ----
+# ---- CONFIG ----
 # ============================================================
 SCENARIOS      <- c("middle_peak")  # scenario 2
-OUTER_SIM_IDS  <- 1:200             # STEP 1: set to 1:5 to calibrate timing, THEN switch to 1:200
+OUTER_SIM_IDS  <- 1:500             # 200 to 500
 INNER_B        <- 200               # B=200 is ample for the SE ratio; slightly conservative for coverage
 N_CORES        <- 32
 LAMBDA0        <- 0.0005   # KEPT AT THE MANUSCRIPT VALUE -- so the true PAF is unchanged (~0.45).
