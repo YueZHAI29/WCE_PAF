@@ -444,3 +444,81 @@ saveRDS(list(wce_models, results_mat),
         file = paste0("~/", Sys.Date(), "_WCE_models.rds"))
 
 
+#############################################
+######       03_add_null_models       #######
+#############################################
+required_pkgs <- c(
+  "tidyverse",
+  "conflicted",
+  "table1",
+  "splines",
+  "survival",
+  "ggplot2",
+  "slider"
+)
+
+conflict_prefer("mutate", "dplyr")
+conflict_prefer("arrange", "dplyr")
+
+# ---- Install any missing packages ----
+for (pkg in required_pkgs) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+}
+invisible(lapply(required_pkgs, library, character.only = TRUE))
+
+thm_k_td <- readRDS("~/longdata.rds")
+
+############################################
+#####     1. IP weighted Cox models    #####
+############################################
+thm_k_td$duree_regle <- splines::ns(thm_k_td$agedeb - thm_k_td$age_regle, df = 3)
+
+# add cumulative exposure
+thm_k_td <- thm_k_td %>%
+  arrange(ident, mdeb_thm) %>%   # ensure correct order
+  group_by(ident) %>%
+  mutate(
+    cum_expo_120m = slide_dbl(
+      .x = treatment_lag1year,              # the exposure variable
+      .f = ~ sum(.x, na.rm = TRUE),
+      .before = 120,              # includes current month + 100 previous
+      .complete = FALSE           # allow partial windows (missing months treated as zero)
+    )
+  ) %>%
+  ungroup()
+
+## Exposure as treatment lagged one year("current" only)
+cox_ipw_lag1year <- coxph(
+  Surv(mdeb_thm, mfin_thm, outcome) ~ treatment_lag1year + imcq + kcsein_famq + mbsq +
+    duree_regle + menotypfin + etude,
+  weights = thm_k_td$ipw,
+  data = thm_k_td
+)
+
+##  "Null" model
+cox_ipw_null <- coxph(
+  Surv(mdeb_thm, mfin_thm, outcome) ~ imcq + kcsein_famq + mbsq +
+    duree_regle + menotypfin + etude,
+  weights = thm_k_td$ipw,
+  data = thm_k_td
+)
+
+# unweighted cumulative exposure
+cox_ipw_cum <- coxph(
+  Surv(mdeb_thm, mfin_thm, outcome) ~ cum_expo_120m + imcq + kcsein_famq + mbsq +
+    duree_regle + menotypfin + etude,
+  weights = thm_k_td$ipw,
+  data = thm_k_td
+)
+
+################
+null_models <- data.frame(
+  model = c("lag1year", "cum_expo", "null"),
+  BIC = c( BIC(cox_ipw_lag1year), BIC(cox_ipw_cum), BIC(cox_ipw_null)  ),
+  AIC = c(AIC(cox_ipw_lag1year), AIC(cox_ipw_cum), AIC(cox_ipw_null)   ),
+  coef = c(cox_ipw_lag1year$coef["treatment_lag1year"], cox_ipw_cum$coef["cum_expo_120m"], NA_real_  )
+)
+
+saveRDS(null_models, "null_models_BIC.rds")
